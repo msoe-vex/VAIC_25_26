@@ -1,0 +1,38 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Serve VEX AI Web Dashboard Debug",
+			"type": "npm",
+			"script": "dev",
+			"path": "JetsonWebDashboard/vexai-web-dashboard-react",
+			"isBackground": true,
+			"problemMatcher": [
+				"$ts-webpack"
+			]
+		},
+		{
+			"label": "Serve VEX AI Web Dashboard Production",
+			"type": "shell",
+			"command": "serve -s JetsonWebDashboard/vexai-web-dashboard-react/build",
+			"problemMatcher": ["$tsc"],
+			"isBackground": true,
+			"dependsOn": [
+				"Build VEX AI Web Dashboard"
+			]
+		},
+		{
+			"label": "Build VEX AI Web Dashboard",
+			"type": "npm",
+			"script": "build",
+			"path": "JetsonWebDashboard/vexai-web-dashboard-react",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	]
+}

@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch VEX AI Web Dashboard (Debug)",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/JetsonWebDashboard/vexai-web-dashboard-react",
+            "preLaunchTask": "Serve VEX AI Web Dashboard Debug"
+        },  
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch VEX AI Web Dashboard (Prod)",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/JetsonWebDashboard/vexai-web-dashboard-react",
+            "preLaunchTask": "Serve VEX AI Web Dashboard Production"
+        }
+    ]
+}
