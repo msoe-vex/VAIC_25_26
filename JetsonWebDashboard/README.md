@@ -1,12 +1,12 @@
 ## Set-Up the VEX AI Web Dashboard
 
-***If you built your Jetson Nano SD card image from source, you will need to fololow these instructions, otherwise if you used the provided VEX AI SD card image, you can skip this section***
+***If you built your SD card image from source, you will need to follow these instructions, otherwise if you used the provided VEX AI SD card image, you can skip this section***
 
-The VEX AI Web Dashboard allows you to see real-time camera, depth, object position, and Jetson statistic data by connecting to a webserver hosted on the Jetson. We turn the Jetson into an access-point (hotspot) and can connect to its Wi-Fi network like any other to connect to this server.
+The VEX AI Web Dashboard allows you to see real-time camera, depth, object position, and Jetson/Raspberry Pi statistic data by connecting to a webserver hosted on the device. We turn the Jetson into an access-point (hotspot) and can connect to its Wi-Fi network like any other to connect to this server.
 
 You can see the section below on how to start an Access Point on your Jetson Nano.
 
-To prepare your Jetson to run the Web Dashboard, follow these steps:
+To prepare your devuce to run the Web Dashboard, follow these steps:
 
 **The Web Dashboard is built in React, you will need to install node.js**
 ```
@@ -16,7 +16,7 @@ sudo apt install nodejs
 sudo apt install npm
 ```
 
-**Restart your Jetson**
+**Restart your devuce**
 ```
 sudo npm cache clean -f
 sudo npm install -g n

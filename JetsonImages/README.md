@@ -19,3 +19,9 @@ In Etcher, select the image you downloaded as the image to flash. Pick the corre
 You should now be able to slot your SD card into your NVIDIA Jetson Nano or Raspberry Pi and it will start running the VEX AI system.
 
 The password to either device (should you need to bring up the display and change anything) is `password`.
+
+## Building the image from source
+If you are interested in building your own image with VAIC software from source, visit the README for your device below
+
+* [Jetson Build Instructions](./BuildImageFromScratch.md)
+* [Raspberry Pi Instructions](./PiInstructions.md)
