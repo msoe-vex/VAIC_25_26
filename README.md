@@ -24,9 +24,9 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
     ```
     dir C:\Users\%USERNAME%\.ssh
     ```
-6. If you don't see a file ending in `.pub`, run this command and don't forget to replace with your email, otherwise, skip to the next step
+6. If you see a file ending in `.pub`, skip this step. Otherwise, run this command and don't forget to replace with your email. Type enter to accept the default options for file location and to leave the passphrase blank.
     ```
-    ssh-keygen -t id_ed25519 -C "your_email@example.com"
+    ssh-keygen -t ed25519 -C "your_email@example.com"
     ```
 7. Run this command (change the path to the SSH key if needed), enter the password for the Jetson Nano user, then type `exit` to close the connection
    ```
