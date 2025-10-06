@@ -45,10 +45,10 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
 11. Save the file
 12. In a new command prompt, run this command
     ```
-    ssh msoe-desktop
+    ssh msoe-nano1
     ```
 13. Check that you see this:
     ```
-    msoe@msoe-desktop:~$ 
+    msoe@msoe-nano1:~$ 
     ```
 14. If you do, congrats! You're all set to run commands on the Jetson Nano from your device!
