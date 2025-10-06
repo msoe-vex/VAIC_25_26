@@ -19,7 +19,7 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
 ## SSH Access on Jetson Orin Nano
 
 1. Turn on the Jeton Nano
-2. Connect to `msoe-desktop` Wi-Fi
+2. Connect to `msoe-nano1` Wi-Fi
 3. Run this command to check if you have an SSH key made:
     ```
     dir C:\Users\%USERNAME%\.ssh
@@ -30,7 +30,7 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
     ```
 7. Run this command (change the path to the SSH key if needed), enter the password for the Jetson Nano user, then type `exit` to close the connection
    ```
-   scp C:\Users\%USERNAME%\.ssh\id_ed25519.pub msoe@msoe-desktop:~/.ssh/authorized_keys
+   scp C:\Users\%USERNAME%\.ssh\id_ed25519.pub msoe@msoe-nano1:~/.ssh/authorized_keys
    ```
 8. Edit `C:\Users\%USERNAME%\.ssh\config` You can open it in VSCode with this command:
    ```
@@ -38,8 +38,8 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
    ```
 10. Add this to the file:
     ```
-    Host msoe-desktop
-      HostName msoe-desktop
+    Host msoe-nano1
+      HostName msoe-nano1
       User msoe
     ```
 11. Save the file
