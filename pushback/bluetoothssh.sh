@@ -54,10 +54,10 @@ echo "Using TCP port $PORT for SSH"
 sudo hciconfig hci0 up
 sudo rfcomm release 0 || true
 
-cat > /tmp/bt_ssh_handler.sh << 'HANDLER_EOF'
+cat > /tmp/bt_ssh_handler.sh << HANDLER_EOF
 #!/bin/bash
 # This script handles each Bluetooth connection
-exec socat STDIO TCP:localhost:22
+exec socat STDIO TCP:localhost:$PORT
 HANDLER_EOF
 chmod +x /tmp/bt_ssh_handler.sh
 
