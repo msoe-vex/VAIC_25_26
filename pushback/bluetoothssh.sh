@@ -22,7 +22,7 @@ EOF
 trap cleanup EXIT
 
 # Package check
-for pack in bluez openssh-server socat; do
+for pack in bluez openssh-server socat bluez-tools; do
     if ! dpkg -l | grep -q "^ii  $pack "; then
         echo "Installing $pack..."
         sudo apt-get install -y "$pack"
