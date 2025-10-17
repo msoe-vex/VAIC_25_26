@@ -10,8 +10,10 @@ cleanup() {
     echo "Cleaning up..."
     sudo pkill -f "rfcomm" || true
     sudo pkill -f "socat" || true
+    # Attempt to delete SDP service, will error if SDP server is gone, but that's okay.
+    # The || true handles the "no local SDP server" if it's already stopped.
     sudo sdptool del SP || true
-    sudo rfcomm release 0 || true
+    # Remove the problematic 'rfcomm release 0' since 'pkill' handles the listener.
     bluetoothctl <<EOF >/dev/null 2>&1 || true
 discoverable off
 pairable off
@@ -28,7 +30,7 @@ for pack in bluez openssh-server socat; do
 done
 
 sudo systemctl restart bluetooth
-sleep 2
+sleep 5
 sudo systemctl enable --now ssh
 
 # Get the bluetooth MAC address first
