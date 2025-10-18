@@ -42,32 +42,24 @@ sudo systemctl stop bluetooth.service
 sleep 2 # Give it time to fully stop
 sudo systemctl start bluetooth.service
 
-# Wait for the Bluetooth service (SDP server) to be ready
-echo "Waiting for Bluetooth service (SDP server) to initialize..."
-MAX_RETRIES=30 # Increased to 30 seconds, just in case
+# Wait for the Bluetooth service (D-Bus interface) to be ready
+echo "Waiting for Bluetooth service (D-Bus interface) to initialize..."
+MAX_RETRIES=30
 COUNT=0
-while ! sudo sdptool browse local > /dev/null 2>&1; do
+while ! sudo bluetoothctl show > /dev/null 2>&1; do
     if [ $COUNT -ge $MAX_RETRIES ]; then
-        echo "ERROR: Bluetooth SDP server failed to start after $MAX_RETRIES seconds."
+        echo "ERROR: Bluetooth D-Bus interface failed to start after $MAX_RETRIES seconds."
         echo "Run 'sudo systemctl status bluetooth.service' and 'journalctl -u bluetooth.service' to diagnose."
         exit 1
     fi
-    echo "Waiting... ($((COUNT+1))/$MAX_RETRIES)"
+    echo "Waiting for D-Bus... ($((COUNT+1))/$MAX_RETRIES)"
     sleep 1
     COUNT=$((COUNT+1))
 done
-echo "Bluetooth service is ready."
-COUNT=0
-while ! sudo sdptool browse local > /dev/null 2>&1; do
-    if [ $COUNT -ge $MAX_RETRIES ]; then
-        echo "ERROR: Bluetooth SDP server failed to start after $MAX_RETRIES seconds."
-        exit 1
-    fi
-    echo "Waiting... ($((COUNT+1))/$MAX_RETRIES)"
-    sleep 1
-    COUNT=$((COUNT+1))
-done
-echo "Bluetooth service is ready."
+echo "Bluetooth D-Bus interface is ready."
+
+# Give the SDP system an extra moment to catch up after D-Bus is ready
+sleep 2
 
 sudo systemctl enable --now ssh
 
