@@ -42,7 +42,7 @@ sudo systemctl stop bluetooth.service
 sleep 2 # Give it time to fully stop
 sudo systemctl start bluetooth.service
 
-# Wait for the Bluetooth service (D-Bus interface) to be ready
+# STAGE 1: Wait for the Bluetooth service (D-Bus interface) to be ready
 echo "Waiting for Bluetooth service (D-Bus interface) to initialize..."
 MAX_RETRIES=30
 COUNT=0
@@ -58,8 +58,20 @@ while ! sudo bluetoothctl show > /dev/null 2>&1; do
 done
 echo "Bluetooth D-Bus interface is ready."
 
-# Give the SDP system an extra moment to catch up after D-Bus is ready
-sleep 2
+# STAGE 2: Now that D-Bus is up, wait for the SDP component to be ready
+echo "Waiting for Bluetooth SDP server component..."
+MAX_RETRIES=15
+COUNT=0
+while ! sudo sdptool browse local > /dev/null 2>&1; do
+    if [ $COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Bluetooth SDP server component failed to start."
+        exit 1
+    fi
+    echo "Waiting for SDP... ($((COUNT+1))/$MAX_RETRIES)"
+    sleep 1
+    COUNT=$((COUNT+1))
+done
+echo "Bluetooth SDP server is ready."
 
 sudo systemctl enable --now ssh
 
