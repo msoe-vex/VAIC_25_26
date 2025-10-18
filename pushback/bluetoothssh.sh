@@ -38,13 +38,15 @@ sudo hciconfig hci0 up
 # STAGE 1: Wait for D-Bus
 echo "Waiting for Bluetooth D-Bus interface..."
 while ! sudo bluetoothctl show > /dev/null 2>&1; do
+    echo "Waiting for D-Bus..."
     sleep 1
 done
 echo "Bluetooth D-Bus interface is ready."
 
-# STAGE 2: Wait for SDP with the -i hci0 flag
+# STAGE 2: Wait for SDP using the 'search' command
 echo "Waiting for Bluetooth SDP server component..."
-while ! sudo sdptool -i hci0 browse local > /dev/null 2>&1; do
+while ! sudo sdptool -i hci0 search SP > /dev/null 2>&1; do
+    echo "Waiting for SDP..."
     sleep 1
 done
 echo "Bluetooth SDP server is ready."
@@ -74,8 +76,8 @@ echo "Using TCP port $PORT for SSH."
 sudo sdptool -i hci0 del SP > /dev/null 2>&1 || true
 sudo sdptool -i hci0 add --channel=1 SP
 
-echo "Registered services:"
-sudo sdptool -i hci0 browse local
+echo "Registered services (searching for SP):"
+sudo sdptool -i hci0 search SP
 
 # Release any existing rfcomm bindings
 for i in {0..9}; do
@@ -106,5 +108,13 @@ echo "========================================================================="
 echo ""
 echo "Monitoring connections... (Ctrl+C to stop)"
 
-# Keep the script alive
-wait $RFCOMM_PID
+# Monitor the connection
+while true; do
+    if ! kill -0 $RFCOMM_PID 2>/dev/null; then
+        echo "[$(date)] Bridge died, restarting..."
+        sudo rfcomm release 0 2>/dev/null || true
+        sudo rfcomm listen /dev/rfcomm0 1 socat STDIO TCP:localhost:$PORT &
+        RFCOMM_PID=$!
+    fi
+    sleep 5
+done
