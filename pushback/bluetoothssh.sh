@@ -74,6 +74,7 @@ echo "Using TCP port $PORT for SSH."
 
 # Register Serial Port Profile service using the -i hci0 flag
 sudo sdptool -i hci0 del SP > /dev/null 2>&1 || true
+sleep 1 # Give the SDP server a moment to process the deletion
 sudo sdptool -i hci0 add --channel=1 SP
 
 echo "Registered services (searching for SP):"
