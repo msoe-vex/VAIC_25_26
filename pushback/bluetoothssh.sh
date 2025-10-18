@@ -28,11 +28,35 @@ for pack in bluez openssh-server socat; do
     fi
 done
 
-sudo systemctl restart bluetooth
+echo "Performing a full reset of the Bluetooth service..."
+
+# Ensure D-Bus is running, as bluetoothd depends on it
+sudo systemctl start dbus.service
+
+# Unblock the adapter, just in case it's soft-blocked
+sudo rfkill unblock bluetooth || true
+sleep 1
+
+# Force a full stop and start, which is more reliable than 'restart'
+sudo systemctl stop bluetooth.service
+sleep 2 # Give it time to fully stop
+sudo systemctl start bluetooth.service
 
 # Wait for the Bluetooth service (SDP server) to be ready
 echo "Waiting for Bluetooth service (SDP server) to initialize..."
-MAX_RETRIES=15
+MAX_RETRIES=30 # Increased to 30 seconds, just in case
+COUNT=0
+while ! sudo sdptool browse local > /dev/null 2>&1; do
+    if [ $COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Bluetooth SDP server failed to start after $MAX_RETRIES seconds."
+        echo "Run 'sudo systemctl status bluetooth.service' and 'journalctl -u bluetooth.service' to diagnose."
+        exit 1
+    fi
+    echo "Waiting... ($((COUNT+1))/$MAX_RETRIES)"
+    sleep 1
+    COUNT=$((COUNT+1))
+done
+echo "Bluetooth service is ready."
 COUNT=0
 while ! sudo sdptool browse local > /dev/null 2>&1; do
     if [ $COUNT -ge $MAX_RETRIES ]; then
