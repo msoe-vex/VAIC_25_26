@@ -1,121 +1,104 @@
 #!/bin/bash
-# filepath: /home/s3nt/Downloads/programming/VAIC_25_26/pushback/bluetoothssh.sh
-# This script is designed to allow the Jetson Orin Nano to open an SSH connection over bluetooth
+# filepath: /home/s3nt/Downloads/programming/VAIC_25_26/pushback/setup_bluetooth_ssh.sh
+# Purpose: Installs dependencies and configures the systemd service for Bluetooth SSH.
 
 set -euo pipefail
 
-# Function to clean on exit
-cleanup() {
-    echo "Cleaning up..."
-    sudo pkill -f "rfcomm" || true
-    sudo pkill -f "socat" || true
-    # Use -i hci0 for cleanup as well
-    sudo sdptool -i hci0 del SP > /dev/null 2>&1 || true
-    bluetoothctl <<EOF >/dev/null 2>&1 || true
-discoverable off
-pairable off
-EOF
-}
-trap cleanup EXIT
+echo "Starting Bluetooth SSH Setup..."
 
-# Package check
+# --- 1. Dependencies Check and Install ---
+echo "Checking and installing dependencies (bluez, openssh-server, socat)..."
 for pack in bluez openssh-server socat; do
-    if ! dpkg -l | grep -q "^ii  $pack "; then
+    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
         echo "Installing $pack..."
-        sudo apt-get install -y "$pack"
+        sudo apt-get update && sudo apt-get install -y "$pack"
     fi
 done
 
-echo "Performing a full reset of the Bluetooth service..."
-sudo systemctl stop bluetooth.service
-sleep 2
-sudo systemctl start bluetooth.service
-sleep 2
+# --- 2. System Service Setup ---
 
-echo "Forcing Bluetooth hardware interface (hci0) up..."
-sudo hciconfig hci0 up
-
-# STAGE 1: Wait for D-Bus
-echo "Waiting for Bluetooth D-Bus interface..."
-while ! sudo bluetoothctl show > /dev/null 2>&1; do
-    echo "Waiting for D-Bus..."
-    sleep 1
-done
-echo "Bluetooth D-Bus interface is ready."
-
-# STAGE 2: Wait for SDP using the 'search' command
-echo "Waiting for Bluetooth SDP server component..."
-while ! sudo sdptool -i hci0 search SP > /dev/null 2>&1; do
-    echo "Waiting for SDP..."
-    sleep 1
-done
-echo "Bluetooth SDP server is ready."
-
+# Ensure SSH is enabled and running
+echo "Ensuring SSH service is enabled and running..."
 sudo systemctl enable --now ssh
 
-# Get the bluetooth MAC address first
-BT_ADDR=$(bluetoothctl show | grep "Controller" | awk '{print $2}')
-echo "Bluetooth MAC address: $BT_ADDR"
+# Get the Bluetooth MAC address for instructions
+BT_ADDR=$(bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
+echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
-# Configure Bluetooth
+# --- 3. Create RFCOMM-to-SSH Bridge Systemd Service ---
+SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
+SSH_PORT=22 # Standard SSH port
+
+echo "Creating systemd service file at $SERVICE_FILE..."
+# The service uses 'rfcomm' which will automatically register the SPP service
+# when it starts, often more reliably than 'sdptool add' during startup.
+# It also ensures the service *waits* for bluetooth.target to be ready.
+sudo tee "$SERVICE_FILE" > /dev/null <<EOF
+[Unit]
+Description=Bluetooth RFCOMM to SSH Bridge
+After=bluetooth.target network.target ssh.service
+Requires=bluetooth.target
+
+[Service]
+# User/Group to run the service as (non-root is safer, but rfcomm may need capabilities)
+# Using root here for full device access, as in your original script.
+User=root
+Group=root
+
+# The main command: Listen on channel 1, and pipe data through socat to local SSH
+ExecStart=/usr/bin/rfcomm listen /dev/rfcomm0 1 /usr/bin/socat STDIO TCP:localhost:$SSH_PORT
+
+# Restart policy: Always try to restart if the process exits (e.g., if rfcomm gets disconnected)
+Restart=always
+RestartSec=5s
+
+# Standard output/error logs to journald
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- 4. Service Enable and Start ---
+echo "Reloading systemd daemon..."
+sudo systemctl daemon-reload
+
+echo "Enabling and starting bluetooth-ssh-bridge.service..."
+# This service will now survive reboots and restart on failure.
+sudo systemctl enable bluetooth-ssh-bridge.service
+sudo systemctl restart bluetooth-ssh-bridge.service
+
+# --- 5. Bluetooth Agent/Config (separate step for pairing) ---
+echo "Setting up Bluetooth discoverability and agent..."
+# Use an interactive shell to configure bluetoothctl settings
 bluetoothctl << EOF
 power on
 pairable on
 discoverable on
 EOF
 
-echo "Starting Bluetooth agent..."
-sudo bt-agent -c NoInputNoOutput &
-sleep 2
-echo "Bluetooth is discoverable and pairable."
+# Use bt-agent for auto-pairing (your original method)
+echo "Starting Bluetooth agent in background for auto-accept pairing..."
+# We use nohup and 'disown' to let it run *after* the script exits, or you can
+# install 'bluetooth-agent.service' which is a better persistent solution.
+# For simplicity, let's use your background process, but we'll manage the PID.
+# A simpler approach is to set the default agent in /etc/bluetooth/main.conf
+# or rely on a system agent/service. Sticking to your method:
+sudo pkill -f "bt-agent" || true # Kill any old one
+sudo nohup bt-agent -c NoInputNoOutput & disown
 
-PORT=22
-echo "Using TCP port $PORT for SSH."
-
-# Register Serial Port Profile service using the -i hci0 flag
-sudo sdptool -i hci0 del SP > /dev/null 2>&1 || true
-sleep 1 # Give the SDP server a moment to process the deletion
-sudo sdptool -i hci0 add --channel=1 SP
-
-echo "Registered services (searching for SP):"
-sudo sdptool -i hci0 search SP
-
-# Release any existing rfcomm bindings
-for i in {0..9}; do
-    sudo rfcomm release $i 2>/dev/null || true
-done
-
-echo "Starting RFCOMM listener on channel 1..."
-sudo rfcomm listen /dev/rfcomm0 1 socat STDIO TCP:localhost:$PORT &
-RFCOMM_PID=$!
-sleep 2
-
-if ! kill -0 $RFCOMM_PID 2>/dev/null; then
-    echo "ERROR: RFCOMM failed to start!"
-    exit 1
-fi
-
-echo "Bluetooth SSH bridge active (pid $RFCOMM_PID)"
+echo "Setup complete! The RFCOMM bridge is running."
 echo ""
 echo "======================== CONNECTION INSTRUCTIONS ========================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
 echo ""
-echo "On a client, pair with the Jetson, then run:"
-echo "sudo rfcomm connect /dev/rfcomm0 $BT_ADDR 1"
+echo "To check service status: sudo systemctl status bluetooth-ssh-bridge.service"
+echo "To view logs: journalctl -u bluetooth-ssh-bridge.service -f"
+echo "Please pair the devices now."
 echo ""
-echo "In another terminal on the client, run:"
-echo "ssh <your_username>@localhost -o ProxyCommand='socat - /dev/rfcomm0'"
+echo "FROM CLIENT DEVICE (Linux/Termux):"
+echo "1. Pair and Trust the Jetson ($BT_ADDR) using bluetoothctl/Android settings."
+echo "2. Connect: sudo rfcomm connect /dev/rfcomm0 $BT_ADDR 1"
+echo "3. SSH: ssh <username>@localhost -o ProxyCommand='socat - /dev/rfcomm0'"
 echo "========================================================================="
-echo ""
-echo "Monitoring connections... (Ctrl+C to stop)"
-
-# Monitor the connection
-while true; do
-    if ! kill -0 $RFCOMM_PID 2>/dev/null; then
-        echo "[$(date)] Bridge died, restarting..."
-        sudo rfcomm release 0 2>/dev/null || true
-        sudo rfcomm listen /dev/rfcomm0 1 socat STDIO TCP:localhost:$PORT &
-        RFCOMM_PID=$!
-    fi
-    sleep 5
-done
