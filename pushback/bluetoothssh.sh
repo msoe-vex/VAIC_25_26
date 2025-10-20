@@ -76,6 +76,7 @@ bluetoothctl << EOF
 power on
 pairable on
 discoverable on
+discoverable-timeout 0
 EOF
 
 # Use bt-agent for auto-pairing (your original method)
