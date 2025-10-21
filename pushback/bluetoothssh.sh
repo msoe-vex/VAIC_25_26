@@ -61,7 +61,7 @@ After=bluetooth.target
 Requires=bluetooth.target
 
 [Service]
-ExecStart=/usr/bin/bt-agent -c NoInputNoOutput
+ExecStart=/usr/bin/bt-agent -c DisplayYesNo
 Restart=always
 RestartSec=3
 
