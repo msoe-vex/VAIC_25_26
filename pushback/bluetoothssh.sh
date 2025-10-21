@@ -1,5 +1,6 @@
 #!/bin/bash
-# Purpose: Installs dependencies and configures systemd services for Bluetooth SSH.
+# Purpose: Installs dependencies and configures systemd services for Bluetooth SSH
+#          with a static PIN (0000) for pairing.
 
 set -euo pipefail
 
@@ -24,7 +25,7 @@ sudo systemctl enable --now ssh
 BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
-# --- 3. Create Systemd Services ---
+# --- 3. Create Systemd Services and PIN File ---
 
 # --- 3a. RFCOMM-to-SSH Bridge Service ---
 SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
@@ -56,18 +57,24 @@ AGENT_SERVICE_FILE="/etc/systemd/system/bluetooth-pairing-agent.service"
 echo "Creating systemd service file at $AGENT_SERVICE_FILE..."
 sudo tee "$AGENT_SERVICE_FILE" > /dev/null <<EOF
 [Unit]
-Description=Bluetooth Auto-Pairing Agent
+Description=Bluetooth Auto-Pairing Agent (Static PIN)
 After=bluetooth.target
 Requires=bluetooth.target
 
 [Service]
-ExecStart=/usr/bin/bt-agent -c DisplayYesNo
+# Use the static PIN file for pairing
+ExecStart=/usr/bin/bt-agent --pin /etc/bluetooth/pincodes.conf
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=bluetooth.target
 EOF
+
+# --- 3c. Create Static PIN File ---
+echo "Creating static PIN file at /etc/bluetooth/pincodes.conf..."
+# This sets the PIN to "0000" for any device ("*")
+echo "* 0000" | sudo tee /etc/bluetooth/pincodes.conf > /dev/null
 
 # --- 4. Service Enable and Start ---
 echo "Reloading systemd daemon..."
@@ -77,6 +84,7 @@ echo "Enabling and starting all services..."
 sudo systemctl enable bluetooth-ssh-bridge.service
 sudo systemctl enable bluetooth-pairing-agent.service
 
+sudo systemctl restart bluetooth.service # Restart main service
 sudo systemctl restart bluetooth-ssh-bridge.service
 sudo systemctl restart bluetooth-pairing-agent.service
 
@@ -90,20 +98,18 @@ discoverable on
 discoverable-timeout 0
 EOF
 
-# The 'nohup' command is no longer needed
 echo "Bluetooth auto-pairing agent is now managed by systemd."
-
 echo "Setup complete! The RFCOMM bridge is running."
 echo ""
 echo "======================== CONNECTION INSTRUCTIONS ========================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
+echo "STATIC PIN: 0000"
 echo ""
 echo "To check bridge status: sudo systemctl status bluetooth-ssh-bridge.service"
 echo "To check agent status: sudo systemctl status bluetooth-pairing-agent.service"
-echo "Please pair the devices now."
+echo "You can now pair from your client device using the PIN 0000."
 echo ""
-echo "FROM CLIENT DEVICE (Linux/Termux):"
-echo "1. Pair and Trust the Jetson ($BT_ADDR) using bluetoothctl/Android settings."
-echo "2. Connect: sudo rfcomm connect /dev/rfcomm0 $BT_ADDR 1"
-echo "3. SSH: ssh <username>@localhost -o ProxyCommand='socat - /dev/rfcomm0'"
+echo "FROM CLIENT DEVICE (Windows/Android/Linux):"
+echo "1. Pair and Trust the Jetson ($BT_ADDR) using the PIN 0000."
+echo "2. Find the outgoing COM port (Windows) or use an app like JuiceSSH (Android)."
 echo "========================================================================="
