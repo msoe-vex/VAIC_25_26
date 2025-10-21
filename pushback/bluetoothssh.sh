@@ -76,6 +76,16 @@ echo "Creating static PIN file at /etc/bluetooth/pincodes.conf..."
 # This sets the PIN to "0000" for any device ("*")
 echo "* 0000" | sudo tee /etc/bluetooth/pincodes.conf > /dev/null
 
+# --- 3d. Disable Secure Simple Pairing (Force Legacy PIN) ---
+echo "Disabling Secure Simple Pairing in /etc/bluetooth/main.conf..."
+if grep -q "SecureSimplePairing" /etc/bluetooth/main.conf; then
+    # If the line exists, change its value
+    sudo sed -i 's/^SecureSimplePairing.*/SecureSimplePairing = false/' /etc/bluetooth/main.conf
+else
+    # If the line doesn't exist, add it under [General]
+    sudo sed -i '/\[General\]/a SecureSimplePairing = false' /etc/bluetooth/main.conf
+fi
+
 # --- 4. Service Enable and Start ---
 echo "Reloading systemd daemon..."
 sudo systemctl daemon-reload
@@ -84,7 +94,7 @@ echo "Enabling and starting all services..."
 sudo systemctl enable bluetooth-ssh-bridge.service
 sudo systemctl enable bluetooth-pairing-agent.service
 
-sudo systemctl restart bluetooth.service # Restart main service
+sudo systemctl restart bluetooth.service # Restart main service to apply all changes
 sudo systemctl restart bluetooth-ssh-bridge.service
 sudo systemctl restart bluetooth-pairing-agent.service
 
@@ -108,8 +118,4 @@ echo ""
 echo "To check bridge status: sudo systemctl status bluetooth-ssh-bridge.service"
 echo "To check agent status: sudo systemctl status bluetooth-pairing-agent.service"
 echo "You can now pair from your client device using the PIN 0000."
-echo ""
-echo "FROM CLIENT DEVICE (Windows/Android/Linux):"
-echo "1. Pair and Trust the Jetson ($BT_ADDR) using the PIN 0000."
-echo "2. Find the outgoing COM port (Windows) or use an app like JuiceSSH (Android)."
 echo "========================================================================="
