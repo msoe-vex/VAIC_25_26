@@ -1,7 +1,11 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures the systemd service for Bluetooth SSH.
+# IMPORTANT: This script MUST be run as root (e.g., "sudo ./setup_bluetooth_ssh.sh")
 
 set -euo pipefail
+
+# Set this for the whole script
+export DEBIAN_FRONTEND=noninteractive
 
 echo "Starting Bluetooth SSH Setup..."
 
@@ -10,27 +14,25 @@ echo "Checking and installing dependencies (bluez, openssh-server, socat)..."
 for pack in bluez openssh-server socat; do
     if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
         echo "Installing $pack..."
-        # We need to run apt-get non-interactively
-        export DEBIAN_FRONTEND=noninteractive
-        sudo apt-get update && sudo apt-get install -y "$pack"
+        apt-get update && apt-get install -y "$pack"
     fi
 done
 
 # --- 2. System Service Setup ---
-
 echo "Packages installed. Setting up Bluetooth SSH service..."
 sleep 2
 
-# Get the Bluetooth MAC address for instructions
-BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
+# Get the Bluetooth MAC address (no sudo needed, script is root)
+BT_ADDR=$(bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
 # --- 3. Create RFCOMM-to-SSH Bridge Systemd Service ---
 SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
-SSH_PORT=22 # Standard SSH port
+SSH_PORT=22
 
 echo "Creating systemd service file at $SERVICE_FILE..."
-sudo tee "$SERVICE_FILE" > /dev/null <<EOF
+# No 'sudo' needed, tee is running as root
+tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=Bluetooth RFCOMM to SSH Bridge
 After=bluetooth.target network.target ssh.service
@@ -51,15 +53,16 @@ EOF
 
 # --- 4. Service Enable and Start ---
 echo "Reloading systemd daemon..."
-sudo systemctl daemon-reload
+systemctl daemon-reload
 
 echo "Enabling and starting bluetooth-ssh-bridge.service..."
-sudo systemctl enable bluetooth-ssh-bridge.service
-sudo systemctl restart bluetooth-ssh-bridge.service
+systemctl enable bluetooth-ssh-bridge.service
+systemctl restart bluetooth-ssh-bridge.service
 
 # --- 5. Bluetooth Agent/Config (separate step for pairing) ---
 echo "Setting up Bluetooth discoverability and agent..."
-sudo bluetoothctl << EOF
+# No 'sudo' needed, script is root
+bluetoothctl << EOF
 power on
 pairable on
 discoverable on
@@ -68,8 +71,8 @@ EOF
 
 # Use bt-agent for auto-pairing
 echo "Starting Bluetooth agent in background for auto-accept pairing..."
-sudo pkill -f "bt-agent" || true # Kill any old one
-sudo nohup bt-agent -c NoInputNoOutput & disown
+pkill -f "bt-agent" || true # No 'sudo' needed
+nohup bt-agent -c NoInputNoOutput & disown
 
 echo "Setup complete! The RFCOMM bridge is running."
 echo ""
