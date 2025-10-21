@@ -1,6 +1,5 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures the systemd service for Bluetooth SSH.
-# IMPORTANT: This script must be run as root (e.g., "sudo ./setup_bluetooth_ssh.sh")
 
 set -euo pipefail
 
