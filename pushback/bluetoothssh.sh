@@ -13,7 +13,7 @@ for pack in bluez openssh-server socat; do
         echo "Installing $pack..."
         # We need to run apt-get non-interactively
         export DEBIAN_FRONTEND=noninteractive
-        sudo apt-get update && apt-get install -y "$pack"
+        sudo apt-get update && sudo apt-get install -y "$pack"
     fi
 done
 
