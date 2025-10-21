@@ -1,7 +1,6 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures systemd services for Bluetooth SSH
-#          using the modern "Just Works" (NoInputNoOutput) pairing method.
-#          Includes a cache clear to force config reload.
+#          using a robust, forking "Just Works" (NoInputNoOutput) agent.
 
 set -euo pipefail
 
@@ -31,6 +30,7 @@ sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 Description=Bluetooth RFCOMM to SSH Bridge
 After=bluetooth.target network.target ssh.service
 Requires=bluetooth.target
+
 [Service]
 User=root
 Group=root
@@ -39,48 +39,60 @@ Restart=always
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal
+
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# --- 4. Remove Old/Buggy Agent Service ---
-echo "Removing old bluetooth-pairing-agent.service..."
-sudo systemctl stop bluetooth-pairing-agent.service || true
-sudo systemctl disable bluetooth-pairing-agent.service || true
-sudo rm -f /etc/systemd/system/bluetooth-pairing-agent.service
-sudo rm -f /etc/bluetooth/pincodes.conf
+# --- 4. Create Correct "Just Works" Agent Service ---
+AGENT_SERVICE_FILE="/etc/systemd/system/bluetooth-pairing-agent.service"
 
-# --- 5. Configure "Just Works" Pairing in main.conf ---
-echo "Configuring 'JustWorksRepairing' in /etc/bluetooth/main.conf..."
-if grep -q "JustWorksRepairing" /etc/bluetooth/main.conf; then
-    sudo sed -i 's/^JustWorksRepairing.*/JustWorksRepairing = always/' /etc/bluetooth/main.conf
-else
-    sudo sed -i '/\[General\]/a JustWorksRepairing = always' /etc/bluetooth/main.conf
-fi
+echo "Creating systemd service file at $AGENT_SERVICE_FILE..."
+sudo tee "$AGENT_SERVICE_FILE" > /dev/null <<EOF
+[Unit]
+Description=Bluetooth Auto-Pairing Agent (Just Works)
+After=bluetooth.target
+Requires=bluetooth.target
+
+[Service]
+# This is the correct configuration for bt-agent
+# 1. Use 'Type=forking' because bt-agent -d forks
+# 2. Use '-d' to run as a daemon
+# 3. Use '-c NoInputNoOutput' for "Just Works" pairing
+Type=forking
+ExecStart=/usr/bin/bt-agent -d -c NoInputNoOutput
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=bluetooth.target
+EOF
+
+# --- 5. Clean Up Old Configs ---
+echo "Cleaning up old config files..."
+# Remove the static PIN file (not needed)
+sudo rm -f /etc/bluetooth/pincodes.conf
+# Remove the JustWorksRepairing line from main.conf (not needed, agent handles it)
+sudo sed -i '/^JustWorksRepairing/d' /etc/bluetooth/main.conf
+# Ensure SSP is not disabled
 sudo sed -i '/^SecureSimplePairing = false/d' /etc/bluetooth/main.conf
 
-# --- 6. Service Enable, Cache Clear, and Start ---
+# --- 6. Service Enable and Start ---
 echo "Reloading systemd daemon..."
 sudo systemctl daemon-reload
 
-echo "Enabling bluetooth-ssh-bridge.service..."
+echo "Enabling and starting all services..."
 sudo systemctl enable bluetooth-ssh-bridge.service
+sudo systemctl enable bluetooth-pairing-agent.service
 
-echo "Stopping Bluetooth service to clear cache..."
-sudo systemctl stop bluetooth.service
-
-echo "Clearing Bluetooth adapter cache..."
-# This forces bluetoothd to re-read all settings and forget old devices
-sudo rm -rf /var/lib/bluetooth/*
-
-echo "Restarting Bluetooth service..."
-sudo systemctl start bluetooth.service
+# Restart the main bluetooth service to apply all new settings
+sudo systemctl restart bluetooth.service
 sudo systemctl restart bluetooth-ssh-bridge.service
+sudo systemctl restart bluetooth-pairing-agent.service
 
 # --- 7. Bluetooth Controller Config ---
 echo "Setting up Bluetooth discoverability..."
-# Give the service a second to come up before we talk to it
-sleep 1
+sleep 1 # Give services a second to start
 sudo bluetoothctl << EOF
 power on
 pairable on
@@ -88,13 +100,13 @@ discoverable on
 discoverable-timeout 0
 EOF
 
-echo "Setup complete! The RFCOMM bridge is running."
+echo "Setup complete! The RFCOMM bridge and a stable agent are running."
 echo ""
 echo "======================== CONNECTION INSTRUCTIONS ========================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
-echo "PAIRING: 'Just Works' (No PIN or agent required)"
+echo "PAIRING: 'Just Works' (No PIN required)"
 echo ""
 echo "To check bridge status: sudo systemctl status bluetooth-ssh-bridge.service"
-echo "You can now pair from your client device. It should connect automatically."
+echo "To check agent status: sudo systemctl status bluetooth-pairing-agent.service"
 echo "CRITICAL: On Windows, you MUST 'Remove device' one last time before trying."
 echo "========================================================================="
