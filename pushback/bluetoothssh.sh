@@ -1,5 +1,5 @@
 #!/bin/bash
-# Purpose: Installs dependencies and configures the systemd service for Bluetooth SSH.
+# Purpose: Installs dependencies and configures systemd services for Bluetooth SSH.
 
 set -euo pipefail
 
@@ -20,18 +20,17 @@ done
 echo "Ensuring SSH service is enabled and running..."
 sudo systemctl enable --now ssh
 
-# Get the Bluetooth MAC address for instructions
-BT_ADDR=$(bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
+# Get the Bluetooth MAC address for instructions (needs sudo)
+BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
-# --- 3. Create RFCOMM-to-SSH Bridge Systemd Service ---
+# --- 3. Create Systemd Services ---
+
+# --- 3a. RFCOMM-to-SSH Bridge Service ---
 SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
 SSH_PORT=22 # Standard SSH port
 
 echo "Creating systemd service file at $SERVICE_FILE..."
-# The service uses 'rfcomm' which will automatically register the SPP service
-# when it starts, often more reliably than 'sdptool add' during startup.
-# It also ensures the service *waits* for bluetooth.target to be ready.
 sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=Bluetooth RFCOMM to SSH Bridge
@@ -39,19 +38,11 @@ After=bluetooth.target network.target ssh.service
 Requires=bluetooth.target
 
 [Service]
-# User/Group to run the service as (non-root is safer, but rfcomm may need capabilities)
-# Using root here for full device access, as in your original script.
 User=root
 Group=root
-
-# The main command: Listen on channel 1, and pipe data through socat to local SSH
 ExecStart=/usr/bin/rfcomm listen /dev/rfcomm0 1 /usr/bin/socat STDIO TCP:localhost:$SSH_PORT
-
-# Restart policy: Always try to restart if the process exits (e.g., if rfcomm gets disconnected)
 Restart=always
 RestartSec=5s
-
-# Standard output/error logs to journald
 StandardOutput=journal
 StandardError=journal
 
@@ -59,42 +50,56 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
+# --- 3b. Bluetooth Auto-Pairing Agent Service ---
+AGENT_SERVICE_FILE="/etc/systemd/system/bluetooth-pairing-agent.service"
+
+echo "Creating systemd service file at $AGENT_SERVICE_FILE..."
+sudo tee "$AGENT_SERVICE_FILE" > /dev/null <<EOF
+[Unit]
+Description=Bluetooth Auto-Pairing Agent
+After=bluetooth.target
+Requires=bluetooth.target
+
+[Service]
+ExecStart=/usr/bin/bt-agent -c NoInputNoOutput
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=bluetooth.target
+EOF
+
 # --- 4. Service Enable and Start ---
 echo "Reloading systemd daemon..."
 sudo systemctl daemon-reload
 
-echo "Enabling and starting bluetooth-ssh-bridge.service..."
-# This service will now survive reboots and restart on failure.
+echo "Enabling and starting all services..."
 sudo systemctl enable bluetooth-ssh-bridge.service
-sudo systemctl restart bluetooth-ssh-bridge.service
+sudo systemctl enable bluetooth-pairing-agent.service
 
-# --- 5. Bluetooth Agent/Config (separate step for pairing) ---
+sudo systemctl restart bluetooth-ssh-bridge.service
+sudo systemctl restart bluetooth-pairing-agent.service
+
+# --- 5. Bluetooth Controller Config ---
 echo "Setting up Bluetooth discoverability and agent..."
-# Use an interactive shell to configure bluetoothctl settings
-bluetoothctl << EOF
+# Use an interactive shell to configure bluetoothctl settings (needs sudo)
+sudo bluetoothctl << EOF
 power on
 pairable on
 discoverable on
 discoverable-timeout 0
 EOF
 
-# Use bt-agent for auto-pairing (your original method)
-echo "Starting Bluetooth agent in background for auto-accept pairing..."
-# We use nohup and 'disown' to let it run *after* the script exits, or you can
-# install 'bluetooth-agent.service' which is a better persistent solution.
-# For simplicity, let's use your background process, but we'll manage the PID.
-# A simpler approach is to set the default agent in /etc/bluetooth/main.conf
-# or rely on a system agent/service. Sticking to your method:
-sudo pkill -f "bt-agent" || true # Kill any old one
-sudo nohup bt-agent -c NoInputNoOutput & disown
+# The 'nohup' command is no longer needed
+echo "Bluetooth auto-pairing agent is now managed by systemd."
 
 echo "Setup complete! The RFCOMM bridge is running."
 echo ""
 echo "======================== CONNECTION INSTRUCTIONS ========================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
 echo ""
-echo "To check service status: sudo systemctl status bluetooth-ssh-bridge.service"
-echo "To view logs: journalctl -u bluetooth-ssh-bridge.service -f"
+echo "To check bridge status: sudo systemctl status bluetooth-ssh-bridge.service"
+echo "To check agent status: sudo systemctl status bluetooth-pairing-agent.service"
 echo "Please pair the devices now."
 echo ""
 echo "FROM CLIENT DEVICE (Linux/Termux):"
