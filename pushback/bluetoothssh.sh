@@ -1,6 +1,6 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures systemd services for Bluetooth SSH
-#          with a static PIN (0000) for pairing.
+#          using modern "Just Works" (NoInputNoOutput) pairing.
 
 set -euo pipefail
 
@@ -25,7 +25,7 @@ sudo systemctl enable --now ssh
 BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
-# --- 3. Create Systemd Services and PIN File ---
+# --- 3. Create Systemd Services and Config ---
 
 # --- 3a. RFCOMM-to-SSH Bridge Service ---
 SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
@@ -51,19 +51,19 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# --- 3b. Bluetooth Auto-Pairing Agent Service ---
+# --- 3b. Bluetooth Auto-Pairing Agent Service ("Just Works") ---
 AGENT_SERVICE_FILE="/etc/systemd/system/bluetooth-pairing-agent.service"
 
 echo "Creating systemd service file at $AGENT_SERVICE_FILE..."
 sudo tee "$AGENT_SERVICE_FILE" > /dev/null <<EOF
 [Unit]
-Description=Bluetooth Auto-Pairing Agent (Static PIN)
+Description=Bluetooth Auto-Pairing Agent (Just Works)
 After=bluetooth.target
 Requires=bluetooth.target
 
 [Service]
-# Use the static PIN file for pairing
-ExecStart=/usr/bin/bt-agent --pin /etc/bluetooth/pincodes.conf
+# Use "NoInputNoOutput" for modern "Just Works" pairing
+ExecStart=/usr/bin/bt-agent -c NoInputNoOutput
 Restart=always
 RestartSec=3
 
@@ -71,19 +71,18 @@ RestartSec=3
 WantedBy=bluetooth.target
 EOF
 
-# --- 3c. Create Static PIN File ---
-echo "Creating static PIN file at /etc/bluetooth/pincodes.conf..."
-# This sets the PIN to "0000" for any device ("*")
-echo "* 0000" | sudo tee /etc/bluetooth/pincodes.conf > /dev/null
+# --- 3c. Remove Static PIN File (No longer needed) ---
+echo "Removing legacy PIN file..."
+sudo rm -f /etc/bluetooth/pincodes.conf
 
-# --- 3d. Disable Secure Simple Pairing (Force Legacy PIN) ---
-echo "Disabling Secure Simple Pairing in /etc/bluetooth/main.conf..."
+# --- 3d. Enable Secure Simple Pairing (Modern Standard) ---
+echo "Enabling Secure Simple Pairing in /etc/bluetooth/main.conf..."
 if grep -q "SecureSimplePairing" /etc/bluetooth/main.conf; then
     # If the line exists, change its value
-    sudo sed -i 's/^SecureSimplePairing.*/SecureSimplePairing = false/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^SecureSimplePairing.*/SecureSimplePairing = true/' /etc/bluetooth/main.conf
 else
     # If the line doesn't exist, add it under [General]
-    sudo sed -i '/\[General\]/a SecureSimplePairing = false' /etc/bluetooth/main.conf
+    sudo sed -i '/\[General\]/a SecureSimplePairing = true' /etc/bluetooth/main.conf
 fi
 
 # --- 4. Service Enable and Start ---
@@ -113,9 +112,9 @@ echo "Setup complete! The RFCOMM bridge is running."
 echo ""
 echo "======================== CONNECTION INSTRUCTIONS ========================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
-echo "STATIC PIN: 0000"
+echo "PAIRING: 'Just Works' (No PIN required)"
 echo ""
 echo "To check bridge status: sudo systemctl status bluetooth-ssh-bridge.service"
 echo "To check agent status: sudo systemctl status bluetooth-pairing-agent.service"
-echo "You can now pair from your client device using the PIN 0000."
+echo "You can now pair from your client device. It should connect automatically."
 echo "========================================================================="
