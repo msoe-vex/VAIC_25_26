@@ -22,7 +22,6 @@ echo "Packages installed. Setting up Bluetooth SSH service..."
 sleep 2
 
 # Get the Bluetooth MAC address for instructions
-# This command now runs as root, so it will work
 BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
@@ -31,7 +30,6 @@ SERVICE_FILE="/etc/systemd/system/bluetooth-ssh-bridge.service"
 SSH_PORT=22 # Standard SSH port
 
 echo "Creating systemd service file at $SERVICE_FILE..."
-# 'tee' will run as root since the whole script is root
 sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=Bluetooth RFCOMM to SSH Bridge
@@ -61,7 +59,6 @@ sudo systemctl restart bluetooth-ssh-bridge.service
 
 # --- 5. Bluetooth Agent/Config (separate step for pairing) ---
 echo "Setting up Bluetooth discoverability and agent..."
-# bluetoothctl will run as root
 sudo bluetoothctl << EOF
 power on
 pairable on
