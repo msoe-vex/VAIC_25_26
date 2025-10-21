@@ -23,7 +23,6 @@ done
 # Ensure SSH is enabled and running
 echo "Ensuring SSH service is enabled and running..."
 systemctl enable ssh
-systemctl start ssh
 
 # Get the Bluetooth MAC address for instructions
 # This command now runs as root, so it will work
