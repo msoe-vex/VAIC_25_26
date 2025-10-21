@@ -19,6 +19,7 @@ done
 
 # --- 2. System Service Setup ---
 
+echo "Packages installed. Setting up Bluetooth SSH service..."
 sleep 2
 
 # Get the Bluetooth MAC address for instructions
