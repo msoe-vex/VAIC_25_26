@@ -19,7 +19,8 @@ done
 
 # Ensure SSH is enabled and running
 echo "Ensuring SSH service is enabled and running..."
-sudo systemctl enable --now ssh
+sudo systemctl enable ssh
+sudo systemctl start ssh
 
 # Get the Bluetooth MAC address for instructions
 BT_ADDR=$(bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "UNKNOWN_MAC")
