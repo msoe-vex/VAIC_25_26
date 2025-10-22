@@ -55,14 +55,16 @@ After=bluetooth.target
 Requires=bluetooth.target
 
 [Service]
-# This is the correct configuration for bt-agent
-# 1. Use 'Type=forking' because bt-agent -d forks
-# 2. Use '-d' to run as a daemon
-# 3. Use '-c NoInputNoOutput' for "Just Works" pairing
+# Correct for auto-pairing: NoInputNoOutput allows devices to connect without prompts
 Type=forking
 ExecStart=/usr/bin/bt-agent -d -c NoInputNoOutput
 Restart=always
 RestartSec=3
+# Add logging to debug pairing issues (e.g., why connections drop)
+StandardOutput=journal
+StandardError=journal
+# Optional: Add a short delay to ensure Bluetooth is ready
+ExecStartPre=/bin/sleep 2
 
 [Install]
 WantedBy=bluetooth.target
