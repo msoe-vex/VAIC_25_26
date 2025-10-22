@@ -1,6 +1,6 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures systemd services for Bluetooth SSH
-#          using a robust, forking "Just Works" (NoInputNoOutput) agent.
+#          using a robust, "Just Works" (NoInputNoOutput) agent.
 
 set -euo pipefail
 
@@ -9,10 +9,10 @@ echo "Starting Bluetooth SSH Setup..."
 # --- 1. Dependencies Check and Install ---
 echo "Checking and installing dependencies (bluez, openssh-server, socat)..."
 for pack in bluez openssh-server socat; do
-    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
-        echo "Installing $pack..."
-        sudo apt-get update && sudo apt-get install -y "$pack"
-    fi
+    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
+        echo "Installing $pack..."
+        sudo apt-get update && sudo apt-get install -y "$pack"
+    fi
 done
 
 # --- 2. System Service Setup ---
@@ -34,7 +34,17 @@ Requires=bluetooth.target
 [Service]
 User=root
 Group=root
-ExecStart=/usr/bin/rfcomm listen /dev/rfcomm0 1 /usr/bin/socat STDIO TCP:localhost:$SSH_PORT
+
+# <--- MODIFIED: Use sdptool to advertise the Serial Port service on channel 1
+ExecStartPre=/usr/bin/sdptool add --channel=1 SP
+
+# <--- MODIFIED: Use socat to listen directly. This is far more stable than 'rfcomm'.
+# 'rfcomm-listen:1' = listen on RFCOMM channel 1
+# 'fork' = allows it to handle new connections without dying
+# 'reuseaddr' = lets the service restart quickly if needed
+# 'TCP4:127.0.0.1:$SSH_PORT' = forces unambiguous IPv4 connection to the SSH server
+ExecStart=/usr/bin/socat rfcomm-listen:1,fork,reuseaddr TCP4:127.0.0.1:$SSH_PORT
+
 Restart=always
 RestartSec=5s
 StandardOutput=journal
@@ -55,16 +65,16 @@ After=bluetooth.target
 Requires=bluetooth.target
 
 [Service]
-# Correct for auto-pairing: NoInputNoOutput allows devices to connect without prompts
-Type=forking
-ExecStart=/usr/bin/bt-agent -d -c NoInputNoOutput
+# <--- MODIFIED: Use 'simple' type, not 'forking'. It's more stable for systemd.
+Type=simple
+
+# <--- MODIFIED: Run in the foreground (-f). systemd will manage it as a daemon.
+ExecStart=/usr/bin/bt-agent -f -c NoInputNoOutput
+
 Restart=always
 RestartSec=3
-# Add logging to debug pairing issues (e.g., why connections drop)
 StandardOutput=journal
 StandardError=journal
-# Optional: Add a short delay to ensure Bluetooth is ready
-ExecStartPre=/bin/sleep 2
 
 [Install]
 WantedBy=bluetooth.target
