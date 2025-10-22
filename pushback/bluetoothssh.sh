@@ -9,10 +9,10 @@ echo "Starting Bluetooth SSH Setup..."
 # --- 1. Dependencies Check and Install ---
 echo "Checking and installing dependencies (bluez, openssh-server, socat)..."
 for pack in bluez openssh-server socat; do
-    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
-        echo "Installing $pack..."
-        sudo apt-get update && sudo apt-get install -y "$pack"
-    fi
+    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
+        echo "Installing $pack..."
+        sudo apt-get update && sudo apt-get install -y "$pack"
+    fi
 done
 
 # --- 2. System Service Setup ---
