@@ -68,42 +68,31 @@ echo "Cleaning up any existing RFCOMM bindings..."
 sudo rfcomm release /dev/rfcomm0 2>/dev/null || true
 sudo killall rfcomm 2>/dev/null || true
 
-# Register SPP service with SDP
-echo "Registering Serial Port Profile (SPP) service..."
-sudo sdptool add --channel=$RFCOMM_CHANNEL SP 2>/dev/null || true
+# Note: SPP service will be registered by the systemd service on start
 
-sudo tee "$SERVICE_FILE" > /dev/null <<EOF
+sudo tee "$SERVICE_FILE" > /dev/null <<'EOF'
 [Unit]
 Description=Bluetooth RFCOMM to SSH Bridge
 After=bluetooth.target network.target ssh.service bluetooth-pairing-agent.service
 Requires=bluetooth.target ssh.service
-# Don't start until pairing agent is ready
 Wants=bluetooth-pairing-agent.service
 
 [Service]
 Type=simple
 User=root
 Group=root
-# Clean up before starting
 ExecStartPre=/bin/sleep 3
 ExecStartPre=/bin/sh -c 'killall rfcomm 2>/dev/null || true'
-ExecStartPre=/usr/bin/rfcomm release /dev/rfcomm0 2>/dev/null || true
-ExecStartPre=/usr/bin/sdptool add --channel=$RFCOMM_CHANNEL SP
-# Use rfcomm watch with socat - keeps listening for new connections
-ExecStart=/usr/bin/rfcomm watch /dev/rfcomm0 $RFCOMM_CHANNEL /usr/bin/socat - TCP:localhost:$SSH_PORT,nodelay,keepalive
-# Clean up on stop
-ExecStopPost=/usr/bin/rfcomm release /dev/rfcomm0 2>/dev/null || true
-# Don't restart on every connection - watch mode handles reconnections
+ExecStartPre=-/usr/bin/rfcomm release /dev/rfcomm0
+ExecStartPre=-/usr/bin/sdptool add --channel=1 SP
+ExecStart=/usr/bin/rfcomm watch /dev/rfcomm0 1 socat - TCP:localhost:22,nodelay,keepalive
+ExecStopPost=-/usr/bin/rfcomm release /dev/rfcomm0
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-# Prevent rapid restart loops
-StartLimitInterval=200
+StartLimitIntervalSec=200
 StartLimitBurst=5
-# Keep the service alive
-RemainAfterExit=no
-# Set time limits to prevent hangs
 TimeoutStartSec=30
 TimeoutStopSec=10
 
