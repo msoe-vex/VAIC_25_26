@@ -296,7 +296,7 @@ sudo chmod +x /usr/local/bin/bt-pan-debug
 
 echo ""
 echo "========================================================================="
-echo "           SETUP COMPLETE - *ISOLATED* PAN SERVER READY"
+echo "           SETUP COMPLETE - *ISOLATED* PAN SERVER READY"
 echo "========================================================================="
 echo "Jetson Bluetooth MAC: $BT_ADDR"
 echo "Pairing Mode: Just Works (No PIN required)"
