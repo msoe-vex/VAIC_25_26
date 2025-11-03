@@ -22,7 +22,7 @@ fi
 # --- 1. Dependencies Check and Install ---
 echo "Checking and installing dependencies..."
 # Removed iptables-persistent
-PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq bridge-utils"
+PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq bridge-utils ifupdown"
 PACKAGES_TO_INSTALL=()
 
 for pack in $PACKAGES_NEEDED; do
