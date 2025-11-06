@@ -89,7 +89,15 @@ EOF
 
 echo "Bringing up br0 interface..."
 sudo systemctl stop dnsmasq.service 2>/dev/null || true
+
+echo "Forcefully cleaning up existing br0 interface..."
+# Use all methods to ensure the interface is gone
 sudo ifdown br0 2>/dev/null || true
+sudo ip link set br0 down 2>/dev/null || true
+sudo ip addr flush dev br0 2>/dev/null || true
+sudo brctl delbr br0 2>/dev/null || true
+
+echo "Attempting to bring up new br0 interface..."
 sudo ifup br0
 
 # --- 4. Configure dnsmasq (DHCP Server) for br0 ---
