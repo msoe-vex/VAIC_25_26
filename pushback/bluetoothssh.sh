@@ -3,6 +3,10 @@
 #          server (NAP profile) with a DHCP server (dnsmasq) on a bridge (br0).
 #          This script *DOES NOT* provide internet access/forwarding to clients.
 #          Uses a "Just Works" (NoInputNoOutput) pairing agent.
+#
+# Changes:
+# - Now uses NetworkManager (nmcli) to create the br0 bridge.
+# - Removed bridge-utils and ifupdown dependencies to avoid conflicts.
 
 set -euo pipefail
 
@@ -21,8 +25,8 @@ fi
 
 # --- 1. Dependencies Check and Install ---
 echo "Checking and installing dependencies..."
-# Removed iptables-persistent
-PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq bridge-utils ifupdown"
+# Removed bridge-utils and ifupdown as they conflict with NetworkManager
+PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq"
 PACKAGES_TO_INSTALL=()
 
 for pack in $PACKAGES_NEEDED; do
@@ -69,36 +73,38 @@ fi
 
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
 
-# --- 3. Create Bridge Network Interface (br0) ---
+# --- 3. Create Bridge Network Interface (br0) via NetworkManager ---
 PAN_NET_IP="192.168.100.1"
 PAN_NET_MASK="255.255.255.0"
 PAN_NET_RANGE="192.168.100.50,192.168.100.150,12h"
 
-echo "Creating bridge interface config at /etc/network/interfaces.d/br0..."
-sudo mkdir -p /etc/network/interfaces.d/
-sudo tee /etc/network/interfaces.d/br0 > /dev/null <<'EOF'
-# Bluetooth PAN Bridge
-auto br0
-iface br0 inet static
-    address 192.168.100.1
-    netmask 255.255.255.0
-    bridge_ports none
-    bridge_stp off
-    bridge_fd 0
-EOF
+echo "Configuring br0 bridge via NetworkManager (nmcli)..."
 
-echo "Bringing up br0 interface..."
-sudo systemctl stop dnsmasq.service 2>/dev/null || true
+# Clean up any old manual/ifupdown configs
+sudo rm -f /etc/network/interfaces.d/br0
 
-echo "Forcefully cleaning up existing br0 interface..."
-# Use all methods to ensure the interface is gone
-sudo ifdown br0 2>/dev/null || true
-sudo ip link set br0 down 2>/dev/null || true
-sudo ip addr flush dev br0 2>/dev/null || true
-sudo brctl delbr br0 2>/dev/null || true
+# Forcefully remove any old 'br0' connection or device
+echo "Cleaning up any existing 'br0' connections or devices..."
+sudo nmcli con down br0 2>/dev/null || true
+sudo nmcli con delete br0 2>/dev/null || true
+sudo ip link delete br0 2>/dev/null || true # Brute-force delete stray device
 
-echo "Attempting to bring up new br0 interface..."
-sudo ifup br0
+echo "Creating new 'br0' NetworkManager connection..."
+
+# 1. Create the bridge connection profile and the 'br0' device
+sudo nmcli con add type bridge ifname br0 con-name br0
+
+# 2. Set the static IP configuration
+sudo nmcli con modify br0 ipv4.method manual ipv4.addresses 192.168.100.1/24
+
+# 3. Set bridge parameters (STP off, forward-delay 0)
+sudo nmcli con modify br0 bridge.stp no
+sudo nmcli con modify br0 bridge.forward-delay 0
+
+# 4. Bring the new connection up
+sudo nmcli con up br0
+
+echo "NetworkManager bridge 'br0' is active."
 
 # --- 4. Configure dnsmasq (DHCP Server) for br0 ---
 echo "Configuring dnsmasq for br0..."
@@ -286,9 +292,11 @@ echo "--- Bluetooth Controller Info ---"
 bluetoothctl show
 hciconfig -a
 echo ""
-echo "--- Bridge & IP Info ---"
-brctl show
+echo "--- Bridge & IP Info (NetworkManager) ---"
 ip a show br0
+echo ""
+echo "--- NetworkManager Status ---"
+nmcli con show br0
 echo ""
 echo "--- DHCP Leases ---"
 cat /var/lib/dnsmasq/dnsmasq.leases
