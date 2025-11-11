@@ -1,8 +1,8 @@
 #!/bin/bash
 # Purpose: Installs dependencies and configures an *ISOLATED* Bluetooth PAN
-#          server (NAP profile) with a DHCP server (dnsmasq) on a bridge (br0).
-#          This script *DOES NOT* provide internet access/forwarding to clients.
-#          Uses "Just Works" (NoInputNoOutput) pairing via bluetoothd.
+#          server (NAP profile) with a DHCP server (dnsmasq) on a bridge (br0).
+#          This script *DOES NOT* provide internet access/forwarding to clients.
+#          Uses "Just Works" (NoInputNoOutput) pairing via bluetoothd.
 #
 # Changes:
 # - Now uses NetworkManager (nmcli) to create the br0 bridge.
@@ -17,12 +17,12 @@ echo "Starting ISOLATED Bluetooth PAN Server Setup..."
 # --- 0. Pre-flight Checks ---
 echo "Performing pre-flight checks..."
 if [[ $EUID -eq 0 ]]; then
-    echo "Warning: Running as root directly. Consider using sudo instead."
+    echo "Warning: Running as root directly. Consider using sudo instead."
 fi
 
 if ! command -v hciconfig &> /dev/null || ! hciconfig hci0 &> /dev/null; then
-    echo "ERROR: Bluetooth hardware (hci0) not detected. Exiting."
-    exit 1
+    echo "ERROR: Bluetooth hardware (hci0) not detected. Exiting."
+    exit 1
 fi
 
 # --- 1. Dependencies Check and Install ---
@@ -32,21 +32,21 @@ PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq"
 PACKAGES_TO_INSTALL=()
 
 for pack in $PACKAGES_NEEDED; do
-    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
-        echo "Package $pack not found."
-        PACKAGES_TO_INSTALL+=("$pack")
-    fi
+    if ! dpkg -l | grep -q "^ii[[:space:]]\+$pack[[:space:]]"; then
+        echo "Package $pack not found."
+        PACKAGES_TO_INSTALL+=("$pack")
+    fi
 done
 
 if [ ${#PACKAGES_TO_INSTALL[@]} -ne 0 ]; then
-    echo "Installing missing packages: ${PACKAGES_TO_INSTALL[*]}"
-    sudo apt-get update
-    sudo apt-get install -y "${PACKAGES_TO_INSTALL[@]}"
+    echo "Installing missing packages: ${PACKAGES_TO_INSTALL[*]}"
+    sudo apt-get update
+    sudo apt-get install -y "${PACKAGES_TO_INSTALL[@]}"
 fi
 
 echo "Ensuring socat is removed (no longer needed)..."
 if dpkg -l | grep -q "^ii[[:space:]]\+socat[[:space:]]"; then
-    sudo apt-get remove -y socat
+    sudo apt-get remove -y socat
 fi
 
 # --- 2. System Service Setup ---
@@ -54,23 +54,23 @@ echo "Ensuring SSH service is enabled and running..."
 sudo systemctl enable --now ssh
 
 if ! sudo systemctl is-active --quiet ssh; then
-    echo "ERROR: SSH service failed to start. Check configuration."
-    exit 1
+    echo "ERROR: SSH service failed to start. Check configuration."
+    exit 1
 fi
 
 BT_ADDR=""
 for i in {1..3}; do
-    BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "")
-    if [[ -n "$BT_ADDR" ]]; then
-        break
-    fi
-    echo "Retrying Bluetooth controller detection (attempt $i)..."
-    sleep 2
+    BT_ADDR=$(sudo bluetoothctl show | grep -i "Controller" | awk '{print $2}' || echo "")
+    if [[ -n "$BT_ADDR" ]]; then
+        break
+    fi
+    echo "Retrying Bluetooth controller detection (attempt $i)..."
+    sleep 2
 done
 
 if [[ -z "$BT_ADDR" ]]; then
-    echo "ERROR: Could not detect Bluetooth MAC address. Exiting."
-    exit 1
+    echo "ERROR: Could not detect Bluetooth MAC address. Exiting."
+    exit 1
 fi
 
 echo "Jetson Bluetooth MAC address: $BT_ADDR"
@@ -150,41 +150,41 @@ sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.backup 2>/dev/null || 
 
 # --- MODIFICATION: Set JustWorksRepairing to 'always' ---
 if ! grep -q "^JustWorksRepairing" /etc/bluetooth/main.conf; then
-    echo "JustWorksRepairing = always" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "JustWorksRepairing = always" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/^JustWorksRepairing.*/JustWorksRepairing = always/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^JustWorksRepairing.*/JustWorksRepairing = always/' /etc/bluetooth/main.conf
 fi
 
 sudo sed -i '/^SecureSimplePairing = false/d' /etc/bluetooth/main.conf
 
 if ! grep -q "^Class" /etc/bluetooth/main.conf; then
-    echo "Class = 0x00020104" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "Class = 0x00020104" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/^Class.*/Class = 0x00020104/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^Class.*/Class = 0x00020104/' /etc/bluetooth/main.conf
 fi
 
 if ! grep -q "^ClassicBondedOnly" /etc/bluetooth/main.conf; then
-    echo "ClassicBondedOnly = false" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "ClassicBondedOnly = false" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/^ClassicBondedOnly.*/ClassicBondedOnly = false/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^ClassicBondedOnly.*/ClassicBondedOnly = false/' /etc/bluetooth/main.conf
 fi
 
 if ! grep -q "^DiscoverableTimeout" /etc/bluetooth/main.conf; then
-    echo "DiscoverableTimeout = 0" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "DiscoverableTimeout = 0" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/^DiscoverableTimeout.*/DiscoverableTimeout = 0/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^DiscoverableTimeout.*/DiscoverableTimeout = 0/' /etc/bluetooth/main.conf
 fi
 
 if ! grep -q "^DisablePlugins" /etc/bluetooth/main.conf; then
-    echo "DisablePlugins = " | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "DisablePlugins = " | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/network//g' /etc/bluetooth/main.conf
+    sudo sed -i 's/network//g' /etc/bluetooth/main.conf
 fi
 
 if ! grep -q "^PageTimeout" /etc/bluetooth/main.conf; then
-    echo "PageTimeout = 8192" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo "PageTimeout = 8192" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
-    sudo sed -i 's/^PageTimeout.*/PageTimeout = 8192/' /etc/bluetooth/main.conf
+    sudo sed -i 's/^PageTimeout.*/PageTimeout = 8192/' /etc/bluetooth/main.conf
 fi
 
 # --- 8. (REMOVED) IP Forwarding and NAT Section ---
@@ -193,9 +193,9 @@ fi
 # --- 9. Disable Bluetooth USB autosuspend ---
 echo "Disabling USB autosuspend for Bluetooth..."
 for device in /sys/bus/usb/devices/*/power/control; do
-    if [ -f "$device" ]; then
-        echo "on" | sudo tee "$device" > /dev/null 2>&1 || true
-    fi
+    if [ -f "$device" ]; then
+        echo "on" | sudo tee "$device" > /dev/null 2>&1 || true
+    fi
 done
 
 # --- 10. Service Enable and Start ---
@@ -221,11 +221,11 @@ echo "Waiting for services to stabilize..."
 sleep 3
 
 if ! sudo systemctl is-active --quiet bluetooth.service; then
-    echo "WARNING: Bluetooth service is not running!"
+    echo "WARNING: Bluetooth service is not running!"
 fi
 # --- MODIFICATION: Removed agent check ---
 if ! sudo systemctl is-active --quiet dnsmasq.service; then
-    echo "WARNING: dnsmasq service is not running!"
+    echo "WARNING: dnsmasq service is not running!"
 fi
 
 # --- 11. Bluetooth Controller Config ---
