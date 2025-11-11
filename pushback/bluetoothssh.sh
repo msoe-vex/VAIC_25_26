@@ -9,6 +9,9 @@
 # - Removed bridge-utils and ifupdown dependencies to avoid conflicts.
 # - Removed deprecated 'bt-agent' service.
 # - Configured 'bluetoothd' directly for "Just Works" pairing.
+# - NEW: Adds NetworkManager config to ignore 'bnep*' devices.
+# - NEW: Forces 'MASTER' link mode on hciconfig for NAP to work.
+# - NEW: Explicitly disables kernel IP forwarding.
 
 set -euo pipefail
 
@@ -27,7 +30,6 @@ fi
 
 # --- 1. Dependencies Check and Install ---
 echo "Checking and installing dependencies..."
-# Removed bridge-utils and ifupdown as they conflict with NetworkManager
 PACKAGES_NEEDED="bluez bluez-tools openssh-server dnsmasq"
 PACKAGES_TO_INSTALL=()
 
@@ -108,6 +110,21 @@ sudo nmcli con up br0
 
 echo "NetworkManager bridge 'br0' is active."
 
+
+# --- 3.5. *** NEW *** Tell NetworkManager to IGNORE bnep devices ---
+# This is CRITICAL to prevent NetworkManager from fighting with bluetoothd,
+# which was causing the "connect-then-disconnect" issue.
+echo "Telling NetworkManager to ignore bnep* interfaces..."
+sudo tee /etc/NetworkManager/conf.d/99-unmanaged-devices.conf > /dev/null <<'NM_EOF'
+[keyfile]
+unmanaged-devices=interface-name:bnep*
+NM_EOF
+
+echo "Restarting NetworkManager to apply unmanaged device rules..."
+sudo systemctl restart NetworkManager
+sleep 2
+
+
 # --- 4. Configure dnsmasq (DHCP Server) for br0 ---
 echo "Configuring dnsmasq for br0..."
 sudo tee /etc/dnsmasq.d/bt-pan.conf > /dev/null <<EOF
@@ -132,8 +149,6 @@ EOF
 
 # --- 6. (REMOVED) "Just Works" Agent Service ---
 echo "Skipping deprecated bt-agent service. Will configure bluetoothd directly."
-# The custom bluetooth-pairing-agent.service is no longer needed.
-# 'JustWorksRepairing = always' will be set in main.conf (Section 7).
 
 # --- 7. Clean Up Old/Modify Main Configs ---
 echo "Cleaning up old config files and processes..."
@@ -148,7 +163,6 @@ sudo rm -f /etc/iptables/rules.v4 # Remove old NAT rules
 
 sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.backup 2>/dev/null || true
 
-# --- MODIFICATION: Set JustWorksRepairing to 'always' ---
 if ! grep -q "^JustWorksRepairing" /etc/bluetooth/main.conf; then
     echo "JustWorksRepairing = always" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 else
@@ -187,8 +201,12 @@ else
     sudo sed -i 's/^PageTimeout.*/PageTimeout = 8192/' /etc/bluetooth/main.conf
 fi
 
-# --- 8. (REMOVED) IP Forwarding and NAT Section ---
-# This section is intentionally left blank as per your request.
+# --- 8. *** NEW *** Disable IP Forwarding for ISOLATED Network ---
+echo "Disabling Kernel IP Forwarding for isolated network..."
+sudo sysctl -w net.ipv4.ip_forward=0
+# Make it persistent
+echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
+
 
 # --- 9. Disable Bluetooth USB autosuspend ---
 echo "Disabling USB autosuspend for Bluetooth..."
@@ -203,7 +221,6 @@ echo "Reloading systemd daemon..."
 sudo systemctl daemon-reload
 
 echo "Enabling and (re)starting all services in correct order..."
-# --- MODIFICATION: Removed bluetooth-pairing-agent.service ---
 sudo systemctl enable dnsmasq.service
 sudo systemctl enable bluetooth.service
 
@@ -223,7 +240,6 @@ sleep 3
 if ! sudo systemctl is-active --quiet bluetooth.service; then
     echo "WARNING: Bluetooth service is not running!"
 fi
-# --- MODIFICATION: Removed agent check ---
 if ! sudo systemctl is-active --quiet dnsmasq.service; then
     echo "WARNING: dnsmasq service is not running!"
 fi
@@ -235,6 +251,8 @@ sleep 2
 sudo hciconfig hci0 down 2>/dev/null || true
 sleep 1
 sudo hciconfig hci0 up
+# --- MODIFICATION: Force MASTER role for Network Access Point (NAP) ---
+sudo hciconfig hci0 lm MASTER,ACCEPT
 sudo hciconfig hci0 piscan
 sudo hciconfig hci0 sspmode 1
 sudo hciconfig hci0 class 0x00020104
@@ -270,8 +288,7 @@ sudo tee /usr/local/bin/bt-pan-debug > /dev/null <<'DEBUG_EOF'
 echo "=== Bluetooth PAN Server Diagnostics (ISOLATED) ==="
 echo ""
 echo "--- Service Status ---"
-# --- MODIFICATION: Removed bluetooth-pairing-agent.service ---
-systemctl status bluetooth.service dnsmasq.service --no-pager
+systemctl status bluetooth.service dnsmasq.service NetworkManager.service --no-pager
 echo ""
 echo "--- Bluetooth Controller Info ---"
 bluetoothctl show
@@ -283,6 +300,9 @@ echo ""
 echo "--- NetworkManager Status ---"
 nmcli con show br0
 echo ""
+echo "--- NetworkManager Unmanaged Devices ---"
+cat /etc/NetworkManager/conf.d/99-unmanaged-devices.conf
+echo ""
 echo "--- DHCP Leases ---"
 cat /var/lib/dnsmasq/dnsmasq.leases
 echo ""
@@ -290,7 +310,6 @@ echo "--- IP Forwarding Status ---"
 echo "IP Forwarding: $(cat /proc/sys/net/ipv4/ip_forward) (0 = disabled, 1 = enabled)"
 echo ""
 echo "--- Recent Errors (last 30 lines) ---"
-# --- MODIFICATION: Removed bluetooth-pairing-agent.service ---
 journalctl -u bluetooth.service -u dnsmasq.service -n 30 --no-pager
 DEBUG_EOF
 
@@ -313,10 +332,13 @@ echo " - Pairable: $PAIRABLE_STATE"
 echo " - Discoverable: $DISCOVERABLE_STATE"
 echo ""
 echo "How to Connect:"
-echo " 1. On your client (phone/laptop), pair with the Jetson."
-echo " 2. Join the 'Personal Area Network' or 'Network Access Point'."
-echo " 3. Your client will get an IP (e.g., 192.168.100.x)."
-echo " 4. You can now SSH to the Jetson at: ssh <your_user>@$PAN_NET_IP"
+echo " 1. **IMPORTANT:** On your client, 'Forget' the Jetson first."
+echo " 2. On the Jetson, run 'sudo bluetoothctl' and 'remove <CLIENT_MAC>'."
+echo " 3. Re-run this setup script."
+echo " 4. On your client (phone/laptop), pair with the Jetson."
+echo " 5. Join the 'Personal Area Network' or 'Network Access Point'."
+echo " 6. Your client will get an IP (e.g., 192.168.100.x)."
+echo " 7. You can now SSH to the Jetson at: ssh <your_user>@$PAN_NET_IP"
 echo ""
 echo "Debug: sudo bt-pan-debug"
 echo "========================================================================="
