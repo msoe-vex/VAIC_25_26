@@ -11,9 +11,9 @@
 # - Configured 'bluetoothd' directly for "Just Works" pairing.
 # - Adds NetworkManager config to ignore 'bnep*' devices.
 # - Explicitly disables kernel IP forwarding.
-# - NEW: Creates a dedicated systemd service (bt-controller-config.service)
-#        to apply hciconfig and bluetoothctl settings AFTER bluetooth.service
-#        starts. This fixes settings being reset (e.g., by nv-bluetooth-service.conf).
+# - Creates a dedicated systemd service (bt-controller-config.service).
+# - NEW: Service logic moved to /usr/local/bin/bt-pan-config.sh
+# - NEW: Added 10-second timeout to bluetoothctl to prevent service hangs.
 
 set -euo pipefail
 
@@ -240,11 +240,35 @@ echo "Waiting for services to stabilize..."
 sleep 3
 
 
-# --- 11. *** NEW *** Create persistent service for Controller Settings ---
-# This service runs AFTER bluetooth.service to apply settings that
-# might be clobbered by other configs (like nv-bluetooth-service.conf).
-echo "Creating persistent service to configure Bluetooth controller..."
+# --- 11. *** MODIFIED *** Create persistent service for Controller Settings ---
 
+echo "Creating helper script for bt-controller-config service..."
+sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'HELPER_EOF'
+#!/bin/bash
+# This script is called by bt-controller-config.service
+sleep 2
+/usr/bin/hciconfig hci0 up
+/usr/bin/hciconfig hci0 lm MASTER,ACCEPT
+/usr/bin/hciconfig hci0 piscan
+/usr/bin/hciconfig hci0 sspmode 1
+/usr/bin/hciconfig hci0 class 0x00020104
+
+# Use a timeout for bluetoothctl to prevent hangs
+timeout 10 /usr/bin/bluetoothctl << EOF
+power on
+pairable on
+discoverable on
+discoverable-timeout 0
+advertise on
+exit
+EOF
+HELPER_EOF
+
+sudo chmod +x /usr/local/bin/bt-pan-config.sh
+echo "Helper script created at /usr/local/bin/bt-pan-config.sh"
+
+
+echo "Creating persistent service to configure Bluetooth controller..."
 sudo tee /etc/systemd/system/bt-controller-config.service > /dev/null <<'BT_CONF_EOF'
 [Unit]
 Description=Apply Bluetooth Controller Settings for PAN
@@ -253,27 +277,19 @@ Requires=bluetooth.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 2
-ExecStart=/bin/sh -c "\
-    /usr/bin/hciconfig hci0 up; \
-    /usr/bin/hciconfig hci0 lm MASTER,ACCEPT; \
-    /usr/bin/hciconfig hci0 piscan; \
-    /usr/bin/hciconfig hci0 sspmode 1; \
-    /usr/bin/hciconfig hci0 class 0x00020104; \
-    /usr/bin/bluetoothctl power on; \
-    /usr/bin/bluetoothctl pairable on; \
-    /usr/bin/bluetoothctl discoverable on; \
-    /usr/bin/bluetoothctl discoverable-timeout 0; \
-    /usr/bin/bluetoothctl advertise on"
+ExecStart=/usr/local/bin/bt-pan-config.sh
 RemainAfterExit=true
 
 [Install]
 WantedBy=multi-user.target
 BT_CONF_EOF
+echo "Service file created at /etc/systemd/system/bt-controller-config.service"
+
 
 echo "Enabling and starting bt-controller-config service..."
 sudo systemctl daemon-reload
-sudo systemctl enable --now bt-controller-config.service
+sudo systemctl enable bt-controller-config.service
+echo "Restarting service... (this may take a moment)"
 sudo systemctl restart bt-controller-config.service
 
 # --- 11.5. Clean up old UDEV rule ---
