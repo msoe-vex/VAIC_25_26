@@ -12,8 +12,11 @@
 # - Adds NetworkManager config to ignore 'bnep*' devices.
 # - Explicitly disables kernel IP forwarding.
 # - Creates a dedicated systemd service (bt-controller-config.service).
-# - NEW: Service logic moved to /usr/local/bin/bt-pan-config.sh
-# - NEW: Added 10-second timeout to bluetoothctl to prevent service hangs.
+# - Service logic moved to /usr/local/bin/bt-pan-config.sh
+# - Added 10-second timeout to bluetoothctl to prevent service hangs.
+# - NEW: Completely rewrote Section 7 to correctly insert keys into
+#        /etc/bluetooth/main.conf under the [General] section, fixing
+#        the "Unknown key" errors.
 
 set -euo pipefail
 
@@ -151,7 +154,8 @@ EOF
 # --- 6. (REMOVED) "Just Works" Agent Service ---
 echo "Skipping deprecated bt-agent service. Will configure bluetoothd directly."
 
-# --- 7. Clean Up Old/Modify Main Configs ---
+
+# --- 7. *** MODIFIED *** Clean Up Old/Modify Main Configs ---
 echo "Cleaning up old config files and processes..."
 sudo killall bt-agent 2>/dev/null || true
 sudo killall rfcomm 2>/dev/null || true
@@ -164,43 +168,38 @@ sudo rm -f /etc/iptables/rules.v4 # Remove old NAT rules
 
 sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.backup 2>/dev/null || true
 
-if ! grep -q "^JustWorksRepairing" /etc/bluetooth/main.conf; then
-    echo "JustWorksRepairing = always" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/^JustWorksRepairing.*/JustWorksRepairing = always/' /etc/bluetooth/main.conf
+echo "Configuring /etc/bluetooth/main.conf..."
+
+# 1. Remove old/misplaced keys from anywhere in the file to prevent duplicates
+sudo sed -i '/^JustWorksRepairing/d' /etc/bluetooth/main.conf
+sudo sed -i '/^ClassicBondedOnly/d' /etc/bluetooth/main.conf
+sudo sed -i '/^DiscoverableTimeout/d' /etc/bluetooth/main.conf
+sudo sed -i '/^Class =/d' /etc/bluetooth/main.conf
+sudo sed -i '/^DisablePlugins/d' /etc/bluetooth/main.conf
+sudo sed -i '/^PageTimeout/d' /etc/bluetooth/main.conf
+
+# 2. Ensure [General] section exists
+if ! grep -q "^\[General\]" /etc/bluetooth/main.conf; then
+    echo "[General]" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 fi
 
-sudo sed -i '/^SecureSimplePairing = false/d' /etc/bluetooth/main.conf
+# 3. Add all keys correctly under the [General] section
+# This sed command finds '[General]' and appends (a) the following lines.
+# We disable the default 'network' plugin so our network.conf can take over.
+sudo sed -i '/^\[General\]/a \
+JustWorksRepairing = always\
+ClassicBondedOnly = false\
+DiscoverableTimeout = 0\
+Class = 0x00020104\
+DisablePlugins = network\
+PageTimeout = 8192
+' /etc/bluetooth/main.conf
 
-if ! grep -q "^Class" /etc/bluetooth/main.conf; then
-    echo "Class = 0x00020104" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/^Class.*/Class = 0x00020104/' /etc/bluetooth/main.conf
-fi
+# 4. Remove any [Policy] section we might have added by mistake
+sudo sed -i '/^\[Policy\]/d' /etc/bluetooth/main.conf
 
-if ! grep -q "^ClassicBondedOnly" /etc/bluetooth/main.conf; then
-    echo "ClassicBondedOnly = false" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/^ClassicBondedOnly.*/ClassicBondedOnly = false/' /etc/bluetooth/main.conf
-fi
+echo "Finished configuring /etc/bluetooth/main.conf"
 
-if ! grep -q "^DiscoverableTimeout" /etc/bluetooth/main.conf; then
-    echo "DiscoverableTimeout = 0" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/^DiscoverableTimeout.*/DiscoverableTimeout = 0/' /etc/bluetooth/main.conf
-fi
-
-if ! grep -q "^DisablePlugins" /etc/bluetooth/main.conf; then
-    echo "DisablePlugins = " | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/network//g' /etc/bluetooth/main.conf
-fi
-
-if ! grep -q "^PageTimeout" /etc/bluetooth/main.conf; then
-    echo "PageTimeout = 8192" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
-else
-    sudo sed -i 's/^PageTimeout.*/PageTimeout = 8192/' /etc/bluetooth/main.conf
-fi
 
 # --- 8. Disable IP Forwarding for ISOLATED Network ---
 echo "Disabling Kernel IP Forwarding for isolated network..."
@@ -240,7 +239,7 @@ echo "Waiting for services to stabilize..."
 sleep 3
 
 
-# --- 11. *** MODIFIED *** Create persistent service for Controller Settings ---
+# --- 11. Create persistent service for Controller Settings ---
 
 echo "Creating helper script for bt-controller-config service..."
 sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'HELPER_EOF'
@@ -315,6 +314,10 @@ echo ""
 echo "--- Bluetooth Controller Info ---"
 bluetoothctl show
 hciconfig -a
+echo ""
+echo "--- /etc/bluetooth/main.conf [General] Section ---"
+echo "Reading [General] section from /etc/bluetooth/main.conf:"
+sed -n '/^\[General\]/,/^\[/ p' /etc/bluetooth/main.conf | head -n 10
 echo ""
 echo "--- Bridge & IP Info (NetworkManager) ---"
 ip a show br0
