@@ -9,9 +9,11 @@
 # - Removed bridge-utils and ifupdown dependencies to avoid conflicts.
 # - Removed deprecated 'bt-agent' service.
 # - Configured 'bluetoothd' directly for "Just Works" pairing.
-# - NEW: Adds NetworkManager config to ignore 'bnep*' devices.
-# - NEW: Forces 'MASTER' link mode on hciconfig for NAP to work.
-# - NEW: Explicitly disables kernel IP forwarding.
+# - Adds NetworkManager config to ignore 'bnep*' devices.
+# - Explicitly disables kernel IP forwarding.
+# - NEW: Creates a dedicated systemd service (bt-controller-config.service)
+#        to apply hciconfig and bluetoothctl settings AFTER bluetooth.service
+#        starts. This fixes settings being reset (e.g., by nv-bluetooth-service.conf).
 
 set -euo pipefail
 
@@ -111,9 +113,8 @@ sudo nmcli con up br0
 echo "NetworkManager bridge 'br0' is active."
 
 
-# --- 3.5. *** NEW *** Tell NetworkManager to IGNORE bnep devices ---
-# This is CRITICAL to prevent NetworkManager from fighting with bluetoothd,
-# which was causing the "connect-then-disconnect" issue.
+# --- 3.5. Tell NetworkManager to IGNORE bnep devices ---
+# This is CRITICAL to prevent NetworkManager from fighting with bluetoothd.
 echo "Telling NetworkManager to ignore bnep* interfaces..."
 sudo tee /etc/NetworkManager/conf.d/99-unmanaged-devices.conf > /dev/null <<'NM_EOF'
 [keyfile]
@@ -201,7 +202,7 @@ else
     sudo sed -i 's/^PageTimeout.*/PageTimeout = 8192/' /etc/bluetooth/main.conf
 fi
 
-# --- 8. *** NEW *** Disable IP Forwarding for ISOLATED Network ---
+# --- 8. Disable IP Forwarding for ISOLATED Network ---
 echo "Disabling Kernel IP Forwarding for isolated network..."
 sudo sysctl -w net.ipv4.ip_forward=0
 # Make it persistent
@@ -223,6 +224,7 @@ sudo systemctl daemon-reload
 echo "Enabling and (re)starting all services in correct order..."
 sudo systemctl enable dnsmasq.service
 sudo systemctl enable bluetooth.service
+# bt-controller-config.service will be enabled in Section 11
 
 sudo systemctl stop dnsmasq.service 2>/dev/null || true
 sudo systemctl stop bluetooth.service
@@ -237,44 +239,48 @@ sudo systemctl restart bluetooth.service
 echo "Waiting for services to stabilize..."
 sleep 3
 
-if ! sudo systemctl is-active --quiet bluetooth.service; then
-    echo "WARNING: Bluetooth service is not running!"
-fi
-if ! sudo systemctl is-active --quiet dnsmasq.service; then
-    echo "WARNING: dnsmasq service is not running!"
-fi
 
-# --- 11. Bluetooth Controller Config ---
-echo "Setting up Bluetooth controller configuration..."
-sleep 2 
+# --- 11. *** NEW *** Create persistent service for Controller Settings ---
+# This service runs AFTER bluetooth.service to apply settings that
+# might be clobbered by other configs (like nv-bluetooth-service.conf).
+echo "Creating persistent service to configure Bluetooth controller..."
 
-sudo hciconfig hci0 down 2>/dev/null || true
-sleep 1
-sudo hciconfig hci0 up
-# --- MODIFICATION: Force MASTER role for Network Access Point (NAP) ---
-sudo hciconfig hci0 lm MASTER,ACCEPT
-sudo hciconfig hci0 piscan
-sudo hciconfig hci0 sspmode 1
-sudo hciconfig hci0 class 0x00020104
+sudo tee /etc/systemd/system/bt-controller-config.service > /dev/null <<'BT_CONF_EOF'
+[Unit]
+Description=Apply Bluetooth Controller Settings for PAN
+After=bluetooth.service
+Requires=bluetooth.service
 
-echo "Creating udev rule to disable USB autosuspend for Bluetooth..."
-sudo tee /etc/udev/rules.d/99-bluetooth-no-autosuspend.rules > /dev/null <<'UDEV_EOF'
-# Disable autosuspend for all Bluetooth USB devices
-ACTION=="add", SUBSYSTEM=="usb", ATTR{bDeviceClass}=="e0", ATTR{power/control}="on"
-ACTION=="add", SUBSYSTEM=="usb", DRIVERS=="btusb", ATTR{power/control}="on"
-UDEV_EOF
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 2
+ExecStart=/bin/sh -c "\
+    /usr/bin/hciconfig hci0 up; \
+    /usr/bin/hciconfig hci0 lm MASTER,ACCEPT; \
+    /usr/bin/hciconfig hci0 piscan; \
+    /usr/bin/hciconfig hci0 sspmode 1; \
+    /usr/bin/hciconfig hci0 class 0x00020104; \
+    /usr/bin/bluetoothctl power on; \
+    /usr/bin/bluetoothctl pairable on; \
+    /usr/bin/bluetoothctl discoverable on; \
+    /usr/bin/bluetoothctl discoverable-timeout 0; \
+    /usr/bin/bluetoothctl advertise on"
+RemainAfterExit=true
 
+[Install]
+WantedBy=multi-user.target
+BT_CONF_EOF
+
+echo "Enabling and starting bt-controller-config service..."
+sudo systemctl daemon-reload
+sudo systemctl enable --now bt-controller-config.service
+sudo systemctl restart bt-controller-config.service
+
+# --- 11.5. Clean up old UDEV rule ---
+# The new service handles this, so the udev rule is redundant
+sudo rm -f /etc/udev/rules.d/99-bluetooth-no-autosuspend.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
-
-timeout 10 sudo bluetoothctl << EOF || true
-power on
-pairable on
-discoverable on
-discoverable-timeout 0
-advertise on
-exit
-EOF
 
 sleep 2
 POWER_STATE=$(sudo bluetoothctl show | grep "Powered:" | awk '{print $2}')
@@ -288,7 +294,7 @@ sudo tee /usr/local/bin/bt-pan-debug > /dev/null <<'DEBUG_EOF'
 echo "=== Bluetooth PAN Server Diagnostics (ISOLATED) ==="
 echo ""
 echo "--- Service Status ---"
-systemctl status bluetooth.service dnsmasq.service NetworkManager.service --no-pager
+systemctl status bluetooth.service dnsmasq.service NetworkManager.service bt-controller-config.service --no-pager
 echo ""
 echo "--- Bluetooth Controller Info ---"
 bluetoothctl show
@@ -310,7 +316,7 @@ echo "--- IP Forwarding Status ---"
 echo "IP Forwarding: $(cat /proc/sys/net/ipv4/ip_forward) (0 = disabled, 1 = enabled)"
 echo ""
 echo "--- Recent Errors (last 30 lines) ---"
-journalctl -u bluetooth.service -u dnsmasq.service -n 30 --no-pager
+journalctl -u bluetooth.service -u dnsmasq.service -u bt-controller-config.service -n 30 --no-pager
 DEBUG_EOF
 
 sudo chmod +x /usr/local/bin/bt-pan-debug
@@ -334,11 +340,10 @@ echo ""
 echo "How to Connect:"
 echo " 1. **IMPORTANT:** On your client, 'Forget' the Jetson first."
 echo " 2. On the Jetson, run 'sudo bluetoothctl' and 'remove <CLIENT_MAC>'."
-echo " 3. Re-run this setup script."
-echo " 4. On your client (phone/laptop), pair with the Jetson."
-echo " 5. Join the 'Personal Area Network' or 'Network Access Point'."
-echo " 6. Your client will get an IP (e.g., 192.168.100.x)."
-echo " 7. You can now SSH to the Jetson at: ssh <your_user>@$PAN_NET_IP"
+echo " 3. On your client (phone/laptop), pair with the Jetson."
+echo " 4. Join the 'Personal Area Network' or 'Network Access Point'."
+echo " 5. Your client will get an IP (e.g., 192.168.100.x)."
+echo " 6. You can now SSH to the Jetson at: ssh <your_user>@$PAN_NET_IP"
 echo ""
 echo "Debug: sudo bt-pan-debug"
 echo "========================================================================="
