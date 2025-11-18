@@ -32,15 +32,15 @@ BRIDGE_IF="br0"
 PACKAGES="bluez bluez-tools dnsmasq openssh-server bridge-utils"
 MISSING=()
 for p in $PACKAGES; do
-  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
-    MISSING+=("$p")
-  fi
+  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
+    MISSING+=("$p")
+  fi
 done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
-  echo "Installing missing packages: ${MISSING[*]}"
-  sudo apt-get update
-  sudo apt-get install -y "${MISSING[@]}"
+  echo "Installing missing packages: ${MISSING[*]}"
+  sudo apt-get update
+  sudo apt-get install -y "${MISSING[@]}"
 fi
 
 # --- 2. Create / configure br0 via NetworkManager ---
@@ -87,7 +87,7 @@ sleep $SLEEP_SHORT
 # --- 5. *** MODIFIED *** /etc/bluetooth/main.conf safe rewrite ---
 # Backup original if not already backed up
 if [[ ! -f /etc/bluetooth/main.conf.bak-setup ]]; then
-  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
+  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
 fi
 
 echo "Writing a minimal, BlueZ-compatible /etc/bluetooth/main.conf (safe rewrite)..."
@@ -193,15 +193,15 @@ BRIDGE="br0"
 sleep 0.5
 
 for ifpath in /sys/class/net/bnep*; do
-  [ -e "$ifpath" ] || continue
-  iface=$(basename "$ifpath")
-  # check if interface already in bridge
-  if ! bridge link show | grep -q " $iface "; then
-    # add to bridge
-    ip link set "$iface" master "$BRIDGE" || true
-    ip link set "$iface" up || true
-    echo "Attached $iface to $BRIDGE"
-  fi
+  [ -e "$ifpath" ] || continue
+  iface=$(basename "$ifpath")
+  # check if interface already in bridge
+  if ! bridge link show | grep -q " $iface "; then
+    # add to bridge
+    ip link set "$iface" master "$BRIDGE" || true
+    ip link set "$iface" up || true
+    echo "Attached $iface to $BRIDGE"
+  fi
 done
 ADD_EOF
 
