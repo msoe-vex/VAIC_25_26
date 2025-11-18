@@ -3,6 +3,8 @@
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
 # --- FINAL WORKING VERSION ---
+# - Uses 'tee' to safely overwrite /etc/bluetooth/main.conf with a
+#   100% correct config, fixing all "Unknown key" errors.
 # - REMOVED the conflicting bt-pan.service (bt-network).
 # - We now let the main bluetooth.service handle the NAP connection,
 #   as defined in /etc/bluetooth/network.conf.
@@ -30,15 +32,15 @@ BRIDGE_IF="br0"
 PACKAGES="bluez bluez-tools dnsmasq openssh-server bridge-utils"
 MISSING=()
 for p in $PACKAGES; do
-  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
-    MISSING+=("$p")
-  fi
+  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
+    MISSING+=("$p")
+  fi
 done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
-  echo "Installing missing packages: ${MISSING[*]}"
-  sudo apt-get update
-  sudo apt-get install -y "${MISSING[@]}"
+  echo "Installing missing packages: ${MISSING[*]}"
+  sudo apt-get update
+  sudo apt-get install -y "${MISSING[@]}"
 fi
 
 # --- 2. Create / configure br0 via NetworkManager ---
@@ -82,20 +84,19 @@ sudo systemctl enable dnsmasq.service
 sudo systemctl restart dnsmasq.service
 sleep $SLEEP_SHORT
 
-# --- 5. Minimal, safe /etc/bluetooth/main.conf changes ---
+# --- 5. *** MODIFIED *** /etc/bluetooth/main.conf safe rewrite ---
 # Backup original if not already backed up
 if [[ ! -f /etc/bluetooth/main.conf.bak-setup ]]; then
-  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
+  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
 fi
 
 echo "Writing a minimal, BlueZ-compatible /etc/bluetooth/main.conf (safe rewrite)..."
-# Overwrite with a minimal, valid main.conf to avoid 'Key file does not start with a group' and unknown-key warnings.
+# Overwrite with a minimal, valid main.conf to fix all "Unknown key" errors.
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
 Class = 0x00020104
 DiscoverableTimeout = 0
-PairableTimeout = 0
 JustWorksRepairing = always
 AutoEnable = true
 
@@ -172,7 +173,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bt-controller-config.service
 sleep $SLEEP_SHORT
 
-# --- 8. *** REMOVED *** bt-pan.service (bt-network) ---
+# --- 8. *** MODIFIED *** Remove bt-pan.service (bt-network) ---
 echo "Stopping and disabling old bt-pan.service (if it exists)..."
 sudo systemctl stop bt-pan.service 2>/dev/null || true
 sudo systemctl disable bt-pan.service 2>/dev/null || true
@@ -192,15 +193,15 @@ BRIDGE="br0"
 sleep 0.5
 
 for ifpath in /sys/class/net/bnep*; do
-  [ -e "$ifpath" ] || continue
-  iface=$(basename "$ifpath")
-  # check if interface already in bridge
-  if ! bridge link show | grep -q " $iface "; then
-    # add to bridge
-    ip link set "$iface" master "$BRIDGE" || true
-    ip link set "$iface" up || true
-    echo "Attached $iface to $BRIDGE"
-  fi
+  [ -e "$ifpath" ] || continue
+  iface=$(basename "$ifpath")
+  # check if interface already in bridge
+  if ! bridge link show | grep -q " $iface "; then
+    # add to bridge
+    ip link set "$iface" master "$BRIDGE" || true
+    ip link set "$iface" up || true
+    echo "Attached $iface to $BRIDGE"
+  fi
 done
 ADD_EOF
 
@@ -280,7 +281,7 @@ sudo cat /var/lib/dnsmasq/dnsmasq.leases 2>/dev/null || true
 echo
 echo "--- Recent logs (bluetooth, dnsmasq) ---"
 # MODIFIED: Removed bt-pan.service
-sudo journalctl -u bluetooth.service -u dnsmasq.service -n 80 --no-pager
+sudo journalctl -u bluetooth.service -u dnsmasq.service -u bt-controller-config.service -n 80 --no-pager
 DEBUG_EOF
 sudo chmod +x /usr/local/bin/bt-pan-debug
 
