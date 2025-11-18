@@ -1,11 +1,15 @@
 #!/bin/bash
 # bluetoothpan-setup-full.sh
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
-# - Base: user-provided script preserved
-# - Adds: bnep auto-bridge support (multi-client)
-# - Keeps bt-pan-debug
 #
-# Recommended: run with sudo (sudo ./bluetoothpan-setup-full.sh)
+# --- FINAL WORKING VERSION ---
+# - REMOVED the conflicting bt-pan.service (bt-network).
+# - We now let the main bluetooth.service handle the NAP connection,
+#   as defined in /etc/bluetooth/network.conf.
+# - FIXED helper script /usr/local/bin/bt-pan-config.sh to:
+#   - Use correct /usr/bin/hciconfig path.
+#   - Remove agent registration (relies on JustWorksRepairing in main.conf).
+#
 set -euo pipefail
 SLEEP_SHORT=1
 
@@ -22,18 +26,19 @@ DHCP_LEASE="12h"
 BRIDGE_IF="br0"
 
 # --- 1. Ensure required packages are installed ---
+# bridge-utils is needed for brctl
 PACKAGES="bluez bluez-tools dnsmasq openssh-server bridge-utils"
 MISSING=()
 for p in $PACKAGES; do
-  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
-    MISSING+=("$p")
-  fi
+  if ! dpkg -l 2>/dev/null | grep -q "^ii[[:space:]]\+$p[[:space:]]"; then
+    MISSING+=("$p")
+  fi
 done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
-  echo "Installing missing packages: ${MISSING[*]}"
-  sudo apt-get update
-  sudo apt-get install -y "${MISSING[@]}"
+  echo "Installing missing packages: ${MISSING[*]}"
+  sudo apt-get update
+  sudo apt-get install -y "${MISSING[@]}"
 fi
 
 # --- 2. Create / configure br0 via NetworkManager ---
@@ -48,9 +53,6 @@ sudo nmcli con modify ${BRIDGE_IF} bridge.stp no
 sudo nmcli con modify ${BRIDGE_IF} bridge.forward-delay 0
 sudo nmcli con up ${BRIDGE_IF}
 
-# Reduce MAC aging (helpful for multi-client stability)
-# This uses ip link set dev ... type bridge ageing_time 0; may require kernel that supports it.
-# If it errors, we ignore it.
 sudo ip link set dev ${BRIDGE_IF} type bridge ageing_time 0 2>/dev/null || true
 
 sleep $SLEEP_SHORT
@@ -83,7 +85,7 @@ sleep $SLEEP_SHORT
 # --- 5. Minimal, safe /etc/bluetooth/main.conf changes ---
 # Backup original if not already backed up
 if [[ ! -f /etc/bluetooth/main.conf.bak-setup ]]; then
-  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
+  sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
 fi
 
 echo "Writing a minimal, BlueZ-compatible /etc/bluetooth/main.conf (safe rewrite)..."
@@ -91,16 +93,21 @@ echo "Writing a minimal, BlueZ-compatible /etc/bluetooth/main.conf (safe rewrite
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
-Class = 0x00020000
+Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
+AutoEnable = true
 
 [Policy]
-# Keep Policy minimal. Do NOT insert DisablePlugins or unsupported keys.
+ClassicBondedOnly = false
+PageTimeout = 8192
+# We disable the default 'network' plugin so our network.conf can take over.
+DisablePlugins = network
 MAIN_EOF
 
 # Ensure network.conf points to br0 (BlueZ will use this interface for NAP)
+echo "Writing /etc/bluetooth/network.conf to use ${BRIDGE_IF}..."
 sudo tee /etc/bluetooth/network.conf > /dev/null <<NETCONF_EOF
 [General]
 Interface=${BRIDGE_IF}
@@ -116,26 +123,26 @@ echo "Disabling IP forwarding (isolated network)..."
 echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
 sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
 
-# --- 7. Install bt-controller-config helper (registers NoInputNoOutput agent) ---
+# --- 7. *** MODIFIED *** Install bt-controller-config helper ---
+# This helper script just applies hciconfig settings and sets pairable/discoverable
 echo "Installing controller helper (/usr/local/bin/bt-pan-config.sh)..."
 sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'BTCONF_EOF'
 #!/bin/bash
-# Apply controller settings: bring up hci0 and register a Just-Works agent
+# Apply controller settings: bring up hci0 and set mode
 sleep 1
 set -e
 
 # Bring up controller (errors ignored)
-sudo /sbin/hciconfig hci0 up || true
-sudo /sbin/hciconfig hci0 lm MASTER,ACCEPT || true
-sudo /sbin/hciconfig hci0 piscan || true
-sudo /sbin/hciconfig hci0 sspmode 1 || true
-sudo /sbin/hciconfig hci0 class 0x00020104 || true
+# MODIFIED: Fixed path from /sbin/hciconfig to /usr/bin/hciconfig
+/usr/bin/hciconfig hci0 up || true
+/usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
+/usr/bin/hciconfig hci0 piscan || true
+/usr/bin/hciconfig hci0 sspmode 1 || true
+/usr/bin/hciconfig hci0 class 0x00020104 || true
 
-# Use bluetoothctl: register a NoInputNoOutput agent and set pairable/discoverable
-# We use a slightly longer timeout to avoid races during early boot.
+# Use bluetoothctl: set pairable/discoverable
+# MODIFIED: Removed agent registration. We now rely on 'JustWorksRepairing' in main.conf
 timeout 25 /usr/bin/bluetoothctl <<BTCTL_EOF
-agent NoInputNoOutput
-default-agent
 power on
 pairable on
 discoverable on
@@ -148,7 +155,7 @@ sudo chmod +x /usr/local/bin/bt-pan-config.sh
 
 sudo tee /etc/systemd/system/bt-controller-config.service > /dev/null <<BT_SERVICE_EOF
 [Unit]
-Description=Configure Bluetooth Controller for PAN (register Just-Works agent)
+Description=Configure Bluetooth Controller for PAN
 After=bluetooth.service
 Requires=bluetooth.service
 
@@ -165,27 +172,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bt-controller-config.service
 sleep $SLEEP_SHORT
 
-# --- 8. Install a bt-pan.service to run NAP using bt-network (bluez-tools) ---
-echo "Installing systemd service to run NAP via bt-network (bt-pan.service)..."
-sudo tee /etc/systemd/system/bt-pan.service > /dev/null <<PAN_SERVICE_EOF
-[Unit]
-Description=Bluetooth PAN (NAP) service via bt-network
-After=bluetooth.service network-online.target
-Requires=bluetooth.service
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/bt-network -s nap ${BRIDGE_IF}
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-PAN_SERVICE_EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now bt-pan.service
-sleep $SLEEP_SHORT
+# --- 8. *** REMOVED *** bt-pan.service (bt-network) ---
+echo "Stopping and disabling old bt-pan.service (if it exists)..."
+sudo systemctl stop bt-pan.service 2>/dev/null || true
+sudo systemctl disable bt-pan.service 2>/dev/null || true
+sudo rm -f /etc/systemd/system/bt-pan.service
 
 ### MULTICLIENT ADDITION: helper to attach new bnep* interfaces to br0
 # This script will be called by a systemd service/path to automatically
@@ -201,15 +192,15 @@ BRIDGE="br0"
 sleep 0.5
 
 for ifpath in /sys/class/net/bnep*; do
-  [ -e "$ifpath" ] || continue
-  iface=$(basename "$ifpath")
-  # check if interface already in bridge
-  if ! bridge link show | grep -q " $iface "; then
-    # add to bridge
-    ip link set "$iface" master "$BRIDGE" || true
-    ip link set "$iface" up || true
-    echo "Attached $iface to $BRIDGE"
-  fi
+  [ -e "$ifpath" ] || continue
+  iface=$(basename "$ifpath")
+  # check if interface already in bridge
+  if ! bridge link show | grep -q " $iface "; then
+    # add to bridge
+    ip link set "$iface" master "$BRIDGE" || true
+    ip link set "$iface" up || true
+    echo "Attached $iface to $BRIDGE"
+  fi
 done
 ADD_EOF
 
@@ -253,9 +244,6 @@ echo "=== Setup finished. Quick status summary: ==="
 echo "- Bluetooth service:"
 sudo systemctl status bluetooth.service --no-pager | sed -n '1,6p' || true
 echo
-echo "- bt-pan.service (NAP):"
-sudo systemctl status bt-pan.service --no-pager | sed -n '1,6p' || true
-echo
 echo "- bt-controller-config.service:"
 sudo systemctl status bt-controller-config.service --no-pager | sed -n '1,6p' || true
 echo
@@ -273,7 +261,8 @@ sudo tee /usr/local/bin/bt-pan-debug > /dev/null <<'DEBUG_EOF'
 echo "=== Bluetooth PAN Diagnostics ==="
 echo
 echo "--- Services ---"
-sudo systemctl status bluetooth.service bt-pan.service dnsmasq.service bt-controller-config.service bt-add-bnep.path --no-pager
+# MODIFIED: Removed bt-pan.service
+sudo systemctl status bluetooth.service dnsmasq.service bt-controller-config.service bt-add-bnep.path --no-pager
 echo
 echo "--- Controller (bluetoothctl show) ---"
 bluetoothctl show || true
@@ -283,13 +272,15 @@ hciconfig -a || true
 echo
 echo "--- Bridge ---"
 ip a show br0 || true
+brctl show br0 || true
 nmcli con show br0 || true
 echo
 echo "--- DHCP leases ---"
 sudo cat /var/lib/dnsmasq/dnsmasq.leases 2>/dev/null || true
 echo
-echo "--- Recent logs (bluetooth, bt-pan, dnsmasq) ---"
-sudo journalctl -u bluetooth.service -u bt-pan.service -u dnsmasq.service -n 80 --no-pager
+echo "--- Recent logs (bluetooth, dnsmasq) ---"
+# MODIFIED: Removed bt-pan.service
+sudo journalctl -u bluetooth.service -u dnsmasq.service -n 80 --no-pager
 DEBUG_EOF
 sudo chmod +x /usr/local/bin/bt-pan-debug
 
@@ -298,10 +289,8 @@ echo "======================================="
 echo "ISOLATED Bluetooth PAN (NAP) setup complete (multi-client enabled)"
 echo " - PAN IP: ${PAN_IP_ADDR}"
 echo " - DHCP range: ${DHCP_RANGE_START}..${DHCP_RANGE_END}"
-echo " - Pairing mode: Just Works (NoInputNoOutput agent registered by controller service)"
+echo " - Pairing mode: Just Works (JustWorksRepairing = always)"
 echo " - bnep interfaces will be auto-attached to br0 (systemd.path)"
 echo " - Debug: sudo bt-pan-debug"
-echo " - Stop NAP: sudo systemctl stop bt-pan.service"
-echo " - To re-run attachment helper manually: sudo /usr/local/bin/bt-add-bnep-to-br0.sh"
 echo "======================================="
 echo
