@@ -15,8 +15,8 @@
 # - Service logic moved to /usr/local/bin/bt-pan-config.sh
 # - Added 10-second timeout to bluetoothctl to prevent service hangs.
 # - NEW: Completely rewrote Section 7 to correctly insert keys into
-#        /etc/bluetooth/main.conf under the [General] section, fixing
-#        the "Unknown key" errors.
+#        /etc/bluetooth/main.conf under the correct [General] and [Policy]
+#        sections, fixing the "Unknown key" errors.
 
 set -euo pipefail
 
@@ -177,26 +177,29 @@ sudo sed -i '/^DiscoverableTimeout/d' /etc/bluetooth/main.conf
 sudo sed -i '/^Class =/d' /etc/bluetooth/main.conf
 sudo sed -i '/^DisablePlugins/d' /etc/bluetooth/main.conf
 sudo sed -i '/^PageTimeout/d' /etc/bluetooth/main.conf
+sudo sed -i '/^AutoEnable/d' /etc/bluetooth/main.conf
 
-# 2. Ensure [General] section exists
+# 2. Ensure [General] section exists and add its keys
 if ! grep -q "^\[General\]" /etc/bluetooth/main.conf; then
-    echo "[General]" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+    echo -e "\n[General]" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
 fi
-
-# 3. Add all keys correctly under the [General] section
-# This sed command finds '[General]' and appends (a) the following lines.
-# We disable the default 'network' plugin so our network.conf can take over.
 sudo sed -i '/^\[General\]/a \
 JustWorksRepairing = always\
-ClassicBondedOnly = false\
 DiscoverableTimeout = 0\
 Class = 0x00020104\
-DisablePlugins = network\
-PageTimeout = 8192
+AutoEnable = true
 ' /etc/bluetooth/main.conf
 
-# 4. Remove any [Policy] section we might have added by mistake
-sudo sed -i '/^\[Policy\]/d' /etc/bluetooth/main.conf
+# 3. Ensure [Policy] section exists and add its keys
+if ! grep -q "^\[Policy\]" /etc/bluetooth/main.conf; then
+    echo -e "\n[Policy]" | sudo tee -a /etc/bluetooth/main.conf > /dev/null
+fi
+# We disable the default 'network' plugin so our network.conf can take over.
+sudo sed -i '/^\[Policy\]/a \
+ClassicBondedOnly = false\
+PageTimeout = 8192\
+DisablePlugins = network
+' /etc/bluetooth/main.conf
 
 echo "Finished configuring /etc/bluetooth/main.conf"
 
@@ -319,6 +322,10 @@ echo "--- /etc/bluetooth/main.conf [General] Section ---"
 echo "Reading [General] section from /etc/bluetooth/main.conf:"
 sed -n '/^\[General\]/,/^\[/ p' /etc/bluetooth/main.conf | head -n 10
 echo ""
+echo "--- /etc/bluetooth/main.conf [Policy] Section ---"
+echo "Reading [Policy] section from /etc/bluetooth/main.conf:"
+sed -n '/^\[Policy\]/,/^\[/ p' /etc/bluetooth/main.conf | head -n 10
+echo ""
 echo "--- Bridge & IP Info (NetworkManager) ---"
 ip a show br0
 echo ""
@@ -343,7 +350,7 @@ sudo chmod +x /usr/local/bin/bt-pan-debug
 echo ""
 echo "========================================================================="
 echo "           SETUP COMPLETE - *ISOLATED* PAN SERVER READY"
-echo "========================================================================="
+echo "================================_========================================"
 echo "Jetson Bluetooth MAC: $BT_ADDR"
 echo "Pairing Mode: Just Works (No PIN required)"
 echo "PAN Network: 192.168.100.0/24"
