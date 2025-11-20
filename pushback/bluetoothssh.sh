@@ -86,7 +86,7 @@ sudo mkdir -p /etc/systemd/system/bluetooth.service.d
 sudo tee /etc/systemd/system/bluetooth.service.d/override.conf > /dev/null <<'SVC_EOF'
 [Service]
 ExecStart=
-ExecStart=/usr/lib/bluetooth/bluetoothd -C --noplugin=audio,input,avrcp,a2dp,hog
+ExecStart=/usr/lib/bluetooth/bluetoothd -C
 SVC_EOF
 sudo systemctl daemon-reload
 
