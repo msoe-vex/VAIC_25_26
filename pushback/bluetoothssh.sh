@@ -86,7 +86,7 @@ sudo mkdir -p /etc/systemd/system/bluetooth.service.d
 sudo tee /etc/systemd/system/bluetooth.service.d/override.conf > /dev/null <<'SVC_EOF'
 [Service]
 ExecStart=
-ExecStart=/usr/lib/bluetooth/bluetoothd -C
+ExecStart=/usr/lib/bluetooth/bluetoothd -C --noplugin=audio,input,avrcp,a2dp,hog
 SVC_EOF
 sudo systemctl daemon-reload
 
@@ -104,8 +104,6 @@ Class = 0x020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
-# Disable Audio/Input so Windows sees a Network Device
-DisablePlugins = audio,input,avrcp,a2dp,hog
 
 [Policy]
 AutoEnable = true
