@@ -2,10 +2,10 @@
 # bluetoothpan-setup-full.sh
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
-# --- FINAL VERSION WITH COMPATIBILITY MODE ---
-# 1. Enables 'bluetoothd -C' (Compat mode) to allow legacy tools like sdptool.
-# 2. Uses 'sdptool add NAP' to FORCE advertise the Network Access Point service.
-#    (This fixes the Windows "Headset vs Router" issue).
+# --- FINAL WORKING VERSION (Udev Trigger) ---
+# - Fixed DHCP failure by switching from systemd.path to UDEV rules.
+# - Udev triggers INSTANTLY when a device connects, ensuring bnep0 gets
+#   bridged to br0 before the DHCP timeout occurs.
 #
 set -euo pipefail
 SLEEP_SHORT=1
@@ -78,19 +78,7 @@ sudo systemctl enable dnsmasq.service
 sudo systemctl restart dnsmasq.service
 sleep $SLEEP_SHORT
 
-# --- 5. *** NEW *** ENABLE COMPATIBILITY MODE (Critical for sdptool) ---
-echo "Enabling Bluetooth Compatibility Mode (-C)..."
-# Create a drop-in override to add the -C flag to bluetoothd
-sudo mkdir -p /etc/systemd/system/bluetooth.service.d
-sudo tee /etc/systemd/system/bluetooth.service.d/override.conf > /dev/null <<'SVC_EOF'
-[Service]
-ExecStart=
-ExecStart=/usr/lib/bluetooth/bluetoothd -C
-SVC_EOF
-
-sudo systemctl daemon-reload
-
-# --- 6. SANITIZED /etc/bluetooth/main.conf ---
+# --- 5. SANITIZED /etc/bluetooth/main.conf rewrite ---
 if [[ ! -f /etc/bluetooth/main.conf.bak-setup ]]; then
   sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
 fi
@@ -99,11 +87,11 @@ echo "Writing a SANITIZED /etc/bluetooth/main.conf..."
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
-# 0x020104 = Computer (Networking capable)
-Class = 0x020104
+Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
+# Disable audio to force Windows to see a Network device
 DisablePlugins = audio,input,avrcp,a2dp,hog
 
 [Policy]
@@ -121,12 +109,12 @@ echo "Restarting bluetooth.service..."
 sudo systemctl restart bluetooth.service
 sleep $SLEEP_SHORT
 
-# --- 7. Disable kernel IP forwarding (ISOLATED) ---
+# --- 6. Disable kernel IP forwarding (ISOLATED) ---
 echo "Disabling IP forwarding..."
 echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
 sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
 
-# --- 8. Persistent Agent Service ---
+# --- 7. Persistent Agent Service ---
 echo "Creating persistent bt-agent.service..."
 sudo tee /etc/systemd/system/bt-agent.service > /dev/null <<AGENT_EOF
 [Unit]
@@ -147,26 +135,17 @@ AGENT_EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now bt-agent.service
 
-# --- 9. *** UPDATED *** Controller Config & SDP Registration ---
+# --- 7.5. Controller Config (Oneshot) ---
 echo "Installing controller helper (/usr/local/bin/bt-pan-config.sh)..."
 sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'BTCONF_EOF'
 #!/bin/bash
 sleep 2
-
-# 1. Force Controller Settings
 /usr/bin/hciconfig hci0 up || true
 /usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
 /usr/bin/hciconfig hci0 piscan || true
 /usr/bin/hciconfig hci0 sspmode 1 || true
-# Force Class to "Desktop Computer + Networking"
-/usr/bin/hciconfig hci0 class 0x020104 || true
+/usr/bin/hciconfig hci0 class 0x00020104 || true
 
-# 2. *** CRITICAL *** Force Register NAP Service
-# This tells Windows: "I am a Network Access Point"
-/usr/bin/sdptool add NAP || true
-/usr/bin/sdptool add GN || true
-
-# 3. Set properties (Agent service keeps pairing open)
 timeout 10 /usr/bin/bluetoothctl <<BTCTL_EOF
 power on
 pairable on
@@ -180,7 +159,7 @@ sudo chmod +x /usr/local/bin/bt-pan-config.sh
 
 sudo tee /etc/systemd/system/bt-controller-config.service > /dev/null <<BT_SERVICE_EOF
 [Unit]
-Description=Configure Bluetooth Controller & SDP
+Description=Configure Bluetooth Controller (Oneshot)
 After=bt-agent.service
 Requires=bt-agent.service
 
@@ -197,57 +176,55 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bt-controller-config.service
 sleep $SLEEP_SHORT
 
-# --- 10. Ensure conflicting services are gone ---
+# --- 8. Ensure conflicting services are gone ---
 echo "Stopping and disabling old bt-pan.service (if it exists)..."
 sudo systemctl stop bt-pan.service 2>/dev/null || true
 sudo systemctl disable bt-pan.service 2>/dev/null || true
 sudo rm -f /etc/systemd/system/bt-pan.service
 
-### MULTICLIENT ADDITION: helper to attach new bnep* interfaces to br0
+# --- 9. *** NEW *** UDEV Rule for Bridging ---
+# This replaces the slow systemd.path method with instant kernel events.
+echo "Configuring Udev rule for automatic bridging..."
+
+# 1. Clean up old systemd methods
+sudo systemctl stop bt-add-bnep.service bt-add-bnep.path 2>/dev/null || true
+sudo systemctl disable bt-add-bnep.service bt-add-bnep.path 2>/dev/null || true
+sudo rm -f /etc/systemd/system/bt-add-bnep.service /etc/systemd/system/bt-add-bnep.path
+
+# 2. Create Helper Script
 sudo tee /usr/local/bin/bt-add-bnep-to-br0.sh > /dev/null <<'ADD_EOF'
 #!/bin/bash
+# Triggered by Udev when a bnep interface is added
 set -e
 BRIDGE="br0"
-sleep 0.5
-for ifpath in /sys/class/net/bnep*; do
-  [ -e "$ifpath" ] || continue
-  iface=$(basename "$ifpath")
-  if ! bridge link show | grep -q " $iface "; then
-    ip link set "$iface" master "$BRIDGE" || true
-    ip link set "$iface" up || true
-    echo "Attached $iface to $BRIDGE"
-  fi
-done
-ADD_EOF
+INTERFACE="$1"
 
+if [ -z "$INTERFACE" ]; then
+    # Fallback loop if no argument passed
+    for ifpath in /sys/class/net/bnep*; do
+        [ -e "$ifpath" ] || continue
+        INTERFACE=$(basename "$ifpath")
+        ip link set "$INTERFACE" master "$BRIDGE" || true
+        ip link set "$INTERFACE" up || true
+    done
+else
+    # Direct add
+    sleep 0.5
+    ip link set "$INTERFACE" master "$BRIDGE" || true
+    ip link set "$INTERFACE" up || true
+fi
+ADD_EOF
 sudo chmod +x /usr/local/bin/bt-add-bnep-to-br0.sh
 
-sudo tee /etc/systemd/system/bt-add-bnep.service > /dev/null <<'ADD_SVC_EOF'
-[Unit]
-Description=Attach bnep interfaces to br0
-After=network.target
+# 3. Create Udev Rule
+# When a network device starting with "bnep" is added, run the script.
+echo 'ACTION=="add", SUBSYSTEM=="net", KERNEL=="bnep*", RUN+="/usr/local/bin/bt-add-bnep-to-br0.sh %k"' | sudo tee /etc/udev/rules.d/99-pan-bridge.rules > /dev/null
 
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/bt-add-bnep-to-br0.sh
-ADD_SVC_EOF
+# 4. Reload Udev
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 
-sudo tee /etc/systemd/system/bt-add-bnep.path > /dev/null <<'ADD_PATH_EOF'
-[Unit]
-Description=Watch for new bnep interfaces and attach to br0
-
-[Path]
-PathExistsGlob=/sys/class/net/bnep*
-
-[Install]
-WantedBy=multi-user.target
-ADD_PATH_EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now bt-add-bnep.path
-sudo systemctl start bt-add-bnep.service || true
-
-# --- 11. Status summary ---
+# --- 10. Status summary ---
 sleep 2
 echo
 echo "=== Setup finished. Quick status summary: ==="
@@ -268,27 +245,19 @@ ip a show ${BRIDGE_IF} || true
 nmcli con show ${BRIDGE_IF} || true
 echo
 
-# --- 12. Debug helper script ---
+# --- 11. Debug helper script ---
 sudo tee /usr/local/bin/bt-pan-debug > /dev/null <<'DEBUG_EOF'
 #!/bin/bash
 echo "=== Bluetooth PAN Diagnostics ==="
 echo
 echo "--- Services ---"
-sudo systemctl status bluetooth.service dnsmasq.service bt-agent.service bt-controller-config.service bt-add-bnep.path --no-pager
-echo
-echo "--- SDP Services (Check for NAP) ---"
-sudo sdptool browse local | grep "Network Access Point" -A 2 -B 2 || echo "NAP Service NOT FOUND in SDP!"
+sudo systemctl status bluetooth.service dnsmasq.service bt-agent.service bt-controller-config.service --no-pager
 echo
 echo "--- Controller (bluetoothctl show) ---"
 bluetoothctl show || true
 echo
-echo "--- hciconfig ---"
-hciconfig -a || true
-echo
-echo "--- Bridge ---"
-ip a show br0 || true
-brctl show br0 || true
-nmcli con show br0 || true
+echo "--- Bridge Members (Should see bnep0 when connected) ---"
+ip link show master br0
 echo
 echo "--- DHCP leases ---"
 sudo cat /var/lib/dnsmasq/dnsmasq.leases 2>/dev/null || true
@@ -301,8 +270,6 @@ sudo chmod +x /usr/local/bin/bt-pan-debug
 # --- final message ---
 echo "======================================="
 echo "ISOLATED Bluetooth PAN (NAP) setup complete"
-echo " - Compat mode (-C) enabled"
-echo " - NAP service registered via sdptool"
 echo " - Debug: sudo bt-pan-debug"
 echo "======================================="
 echo
