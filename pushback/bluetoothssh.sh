@@ -92,6 +92,7 @@ Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
+DisablePlugins = audio,input,avrcp,a2dp,hog
 
 [Policy]
 AutoEnable = true
