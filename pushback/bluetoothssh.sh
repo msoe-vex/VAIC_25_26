@@ -98,8 +98,8 @@ DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
 # These keys belong in General, NOT Policy:
-ClassicBondedOnly = false
-PageTimeout = 8192
+# ClassicBondedOnly = false
+# PageTimeout = 8192
 
 [Policy]
 # AutoEnable belongs in Policy
