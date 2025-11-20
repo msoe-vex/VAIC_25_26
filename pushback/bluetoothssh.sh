@@ -96,7 +96,6 @@ Name = %h
 Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
-Pairable = true
 JustWorksRepairing = always
 # These keys belong in General, NOT Policy:
 # ClassicBondedOnly = false
@@ -140,8 +139,10 @@ set -e
 /usr/bin/hciconfig hci0 class 0x00020104 || true
 
 # Use bluetoothctl: set pairable/discoverable
-timeout 25 /usr/bin/bluetoothctl <<BTCTL_EOF
+timeout 25 bluetoothctl <<BTCTL_EOF
 power on
+agent NoInputNoOutput
+default-agent
 pairable on
 discoverable on
 discoverable-timeout 0
