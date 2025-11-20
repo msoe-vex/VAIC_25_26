@@ -3,12 +3,10 @@
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
 # --- FINAL WORKING VERSION ---
-# - FIXED /etc/bluetooth/main.conf:
-#   - Moved AutoEnable to [Policy]
-#   - Moved ClassicBondedOnly, PageTimeout to [General]
-#   - REMOVED DisablePlugins=network (We NEED the network plugin for NAP!)
-# - Configures bluetoothd to handle the network via /etc/bluetooth/network.conf
-# - Helper script uses correct /usr/bin/hciconfig path
+# - Uses 'tee' to safely overwrite /etc/bluetooth/main.conf.
+# - REMOVED conflicting bt-pan.service.
+# - ADDED 'bt-agent.service': A persistent background service that keeps
+#   the agent registered. This fixes the "Pairable: no" issue permanently.
 #
 set -euo pipefail
 SLEEP_SHORT=1
@@ -81,15 +79,12 @@ sudo systemctl enable dnsmasq.service
 sudo systemctl restart dnsmasq.service
 sleep $SLEEP_SHORT
 
-# --- 5. *** FIXED *** /etc/bluetooth/main.conf safe rewrite ---
-# Backup original if not already backed up
+# --- 5. SANITIZED /etc/bluetooth/main.conf rewrite ---
 if [[ ! -f /etc/bluetooth/main.conf.bak-setup ]]; then
   sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.bak-setup || true
 fi
 
-echo "Writing a CORRECT /etc/bluetooth/main.conf..."
-# We have moved keys to their correct sections based on BlueZ 5.x standards.
-# We REMOVED 'DisablePlugins = network' because we NEED the network plugin for NAP.
+echo "Writing a SANITIZED /etc/bluetooth/main.conf..."
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
@@ -97,52 +92,67 @@ Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
-# These keys belong in General, NOT Policy:
-# ClassicBondedOnly = false
-# PageTimeout = 8192
 
 [Policy]
-# AutoEnable belongs in Policy
 AutoEnable = true
 MAIN_EOF
 
-# Ensure network.conf points to br0 (BlueZ will use this interface for NAP)
+# Ensure network.conf points to br0
 echo "Writing /etc/bluetooth/network.conf to use ${BRIDGE_IF}..."
 sudo tee /etc/bluetooth/network.conf > /dev/null <<NETCONF_EOF
 [General]
 Interface=${BRIDGE_IF}
 NETCONF_EOF
 
-# Restart bluetoothd so main.conf / network.conf take effect
 echo "Restarting bluetooth.service..."
 sudo systemctl restart bluetooth.service
 sleep $SLEEP_SHORT
 
-# --- 6. Disable kernel IP forwarding to keep network ISOLATED ---
-echo "Disabling IP forwarding (isolated network)..."
+# --- 6. Disable kernel IP forwarding (ISOLATED) ---
+echo "Disabling IP forwarding..."
 echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
 sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
 
-# --- 7. Install bt-controller-config helper ---
+# --- 7. *** NEW *** Persistent Agent Service ---
+# This runs 'bt-agent' in the background to keep Pairable=Yes active.
+echo "Creating persistent bt-agent.service..."
+sudo tee /etc/systemd/system/bt-agent.service > /dev/null <<AGENT_EOF
+[Unit]
+Description=Bluetooth Persistent Agent
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+# This acts exactly like running it manually in a new window
+ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+AGENT_EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now bt-agent.service
+
+# --- 7.5. Controller Config (Oneshot) ---
+# This sets the initial state (UP, PISCAN, etc.)
 echo "Installing controller helper (/usr/local/bin/bt-pan-config.sh)..."
 sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'BTCONF_EOF'
 #!/bin/bash
-# Apply controller settings: bring up hci0 and set mode
-sleep 1
-set -e
-
-# Bring up controller (errors ignored)
+sleep 2
+# Force Controller Settings
 /usr/bin/hciconfig hci0 up || true
 /usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
 /usr/bin/hciconfig hci0 piscan || true
 /usr/bin/hciconfig hci0 sspmode 1 || true
 /usr/bin/hciconfig hci0 class 0x00020104 || true
 
-# Use bluetoothctl: set pairable/discoverable
-timeout 25 bluetoothctl <<BTCTL_EOF
+# Trigger initial visibility
+# We removed the 'agent' lines here because bt-agent.service now handles it!
+timeout 10 /usr/bin/bluetoothctl <<BTCTL_EOF
 power on
-agent NoInputNoOutput
-default-agent
 pairable on
 discoverable on
 discoverable-timeout 0
@@ -154,9 +164,9 @@ sudo chmod +x /usr/local/bin/bt-pan-config.sh
 
 sudo tee /etc/systemd/system/bt-controller-config.service > /dev/null <<BT_SERVICE_EOF
 [Unit]
-Description=Configure Bluetooth Controller for PAN
-After=bluetooth.service
-Requires=bluetooth.service
+Description=Configure Bluetooth Controller (Oneshot)
+After=bt-agent.service
+Requires=bt-agent.service
 
 [Service]
 Type=oneshot
@@ -180,8 +190,6 @@ sudo rm -f /etc/systemd/system/bt-pan.service
 ### MULTICLIENT ADDITION: helper to attach new bnep* interfaces to br0
 sudo tee /usr/local/bin/bt-add-bnep-to-br0.sh > /dev/null <<'ADD_EOF'
 #!/bin/bash
-# bt-add-bnep-to-br0.sh
-# Add any bnep* interfaces to br0 if not already a member.
 set -e
 BRIDGE="br0"
 sleep 0.5
@@ -223,12 +231,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bt-add-bnep.path
 sudo systemctl start bt-add-bnep.service || true
 
-# --- 9. Small sanity wait and display status summary ---
-sleep 1
+# --- 9. Status summary ---
+sleep 2
 echo
 echo "=== Setup finished. Quick status summary: ==="
 echo "- Bluetooth service:"
 sudo systemctl status bluetooth.service --no-pager | sed -n '1,6p' || true
+echo
+echo "- bt-agent.service (Persistent Agent):"
+sudo systemctl status bt-agent.service --no-pager | sed -n '1,6p' || true
 echo
 echo "- bt-controller-config.service:"
 sudo systemctl status bt-controller-config.service --no-pager | sed -n '1,6p' || true
@@ -247,7 +258,7 @@ sudo tee /usr/local/bin/bt-pan-debug > /dev/null <<'DEBUG_EOF'
 echo "=== Bluetooth PAN Diagnostics ==="
 echo
 echo "--- Services ---"
-sudo systemctl status bluetooth.service dnsmasq.service bt-controller-config.service bt-add-bnep.path --no-pager
+sudo systemctl status bluetooth.service dnsmasq.service bt-agent.service bt-controller-config.service bt-add-bnep.path --no-pager
 echo
 echo "--- Controller (bluetoothctl show) ---"
 bluetoothctl show || true
@@ -263,8 +274,8 @@ echo
 echo "--- DHCP leases ---"
 sudo cat /var/lib/dnsmasq/dnsmasq.leases 2>/dev/null || true
 echo
-echo "--- Recent logs (bluetooth, dnsmasq) ---"
-sudo journalctl -u bluetooth.service -u dnsmasq.service -n 80 --no-pager
+echo "--- Recent logs ---"
+sudo journalctl -u bluetooth.service -u bt-agent.service -u dnsmasq.service -n 50 --no-pager
 DEBUG_EOF
 sudo chmod +x /usr/local/bin/bt-pan-debug
 
