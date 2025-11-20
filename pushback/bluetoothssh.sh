@@ -96,6 +96,7 @@ Name = %h
 Class = 0x00020104
 DiscoverableTimeout = 0
 PairableTimeout = 0
+Pairable = true
 JustWorksRepairing = always
 # These keys belong in General, NOT Policy:
 # ClassicBondedOnly = false
