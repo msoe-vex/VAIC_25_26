@@ -31,7 +31,7 @@ sudo npm install -g serve
 To build the WebServer:
 - Run `npm run build` to build the react app
 - At the root of the repository, run `serve -s build` to serve the static build files
-- Navigate to `http://10.42.0.1:3000/#/` in a browser connected to your Jetson Nano
+- Navigate to `http://192.168.100.1:3000/#/` in a browser connected to your Jetson Nano
 
 
 ## Starting Jetson Access Point
