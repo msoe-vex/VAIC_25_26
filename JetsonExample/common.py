@@ -52,24 +52,40 @@ class HostDeviceMem(object):
         return self.__str__()
 
 # Allocates all buffers required for an engine, i.e. host/device inputs/outputs.
+# Allocates all buffers required for an engine, i.e. host/device inputs/outputs.
 def allocate_buffers(engine):
     inputs = []
     outputs = []
     bindings = []
     stream = cuda.Stream()
+    
+    # In modern TensorRT, iterating the engine yields binding names, not indices
     for binding in engine:
-        size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
+        # Get binding shape using the new name-based API
+        shape = engine.get_tensor_shape(binding)
+        
+        # Calculate size. 
+        # IMPORTANT: Since we use EXPLICIT_BATCH, the 'shape' already includes 
+        # the batch dimension (e.g., [1, 320, 320, 3]).
+        # We strictly DO NOT multiply by max_batch_size here.
+        size = trt.volume(shape)
+        
+        # Get dtype using the new name-based API
+        dtype = trt.nptype(engine.get_tensor_dtype(binding))
+        
         # Allocate host and device buffers
         host_mem = cuda.pagelocked_empty(size, dtype)
         device_mem = cuda.mem_alloc(host_mem.nbytes)
+        
         # Append the device buffer to device bindings.
         bindings.append(int(device_mem))
-        # Append to the appropriate list.
-        if engine.binding_is_input(binding):
+        
+        # Check if input or output using the new Enum
+        if engine.get_tensor_mode(binding) == trt.TensorIOMode.INPUT:
             inputs.append(HostDeviceMem(host_mem, device_mem))
         else:
             outputs.append(HostDeviceMem(host_mem, device_mem))
+            
     return inputs, outputs, bindings, stream
 
 # This function is generalized for multiple inputs/outputs.
