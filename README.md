@@ -31,7 +31,7 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
     ```
 4. Add this to the file:
     ```
-    Host msoe-nano1
+    Host msoe-nano*
         HostName 192.168.100.1
         User msoe
     ```
