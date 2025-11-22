@@ -47,10 +47,11 @@ class CUDABackend(ModelBackend):
                     trt.OnnxParser(network, TRT_LOGGER) as parser, \
                     trt.Runtime(TRT_LOGGER) as runtime:
 
-                # This line deprecated in TensorRT 8.5 and later
+                # These lines deprecated in TensorRT 8.5 and later
                 # config.max_workspace_size = 1 << 28  # Set maximum workspace size to 256MiB
+                # builder.max_batch_size = 1
+
                 config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 28)
-                builder.max_batch_size = 1
 
                 # Check if ONNX file exists
                 if not os.path.exists(onnx_file_path):
