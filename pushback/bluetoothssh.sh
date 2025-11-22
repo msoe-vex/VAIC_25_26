@@ -158,6 +158,7 @@ Type=simple
 ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
 Restart=always
 RestartSec=5
+TimeoutStopSec=2
 
 [Install]
 WantedBy=multi-user.target
