@@ -256,8 +256,11 @@ class MainApp:
 
     def run(self):
         # Start main loop: capture frames, process, detect objects, compute detections, render and display
+        print("Starting V5 communications...")
         self.v5.start()
+        print("Starting V5 position tracking...")
         self.v5Pos.start()
+        print("Starting web server...")
         self.v5Web.start()
         run_time = time.time()
         print("\nStarting Loop")
@@ -283,5 +286,11 @@ class MainApp:
 
 
 if __name__ == "__main__":
-    app = MainApp()  # Create the main application
-    app.run()  # Run the application
+    try:
+        print("=== Starting VEXAI Application ===")
+        app = MainApp()  # Create the main application
+        app.run()  # Run the application
+    except Exception as e:
+        print(f"FATAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
