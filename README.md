@@ -46,7 +46,7 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
     ```
 8. Run this command (change the path to the SSH key if needed), enter the password for the Jetson Nano user, then type `exit` to close the connection
     ```
-    type C:\Users\%USERNAME%\.ssh\id_rsa.pub | ssh msoe-nano1 "cat >> ~/.ssh/authorized_keys"
+    type C:\Users\%USERNAME%\.ssh\id_ed25519.pub | ssh msoe-nano1 "cat >> ~/.ssh/authorized_keys"
     ```
 9. In a new command prompt, run this command
     ```
