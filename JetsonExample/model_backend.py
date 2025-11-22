@@ -99,7 +99,7 @@ class CUDABackend(ModelBackend):
 
     def inference(self, image):
         self.inputs[0].host = image
-        trt_outputs = cuda_common.do_inference_v2(self.context, bindings=self.bindings, inputs=self.inputs,
+        trt_outputs = cuda_common.do_inference_v3(self.context, bindings=self.bindings, inputs=self.inputs,
                                              outputs=self.outputs, stream=self.stream)
         
         return trt_outputs

@@ -115,3 +115,27 @@ def do_inference_v2(context, bindings, inputs, outputs, stream):
     stream.synchronize()
     # Return only the host outputs.
     return [out.host for out in outputs]
+
+# This function is generalized for multiple inputs/outputs for full dimension networks.
+# inputs and outputs are expected to be lists of HostDeviceMem objects.
+def do_inference_v3(context, bindings, inputs, outputs, stream):
+    # Transfer input data to the GPU.
+    [cuda.memcpy_htod_async(inp.device, inp.host, stream) for inp in inputs]
+
+    # NEW: Set tensor addresses for TensorRT 10.x (execute_async_v3)
+    # We iterate through the engine to get tensor names and map them to 
+    # the pointers in our 'bindings' list (which matches the iteration order).
+    for i, tensor_name in enumerate(context.engine):
+        context.set_tensor_address(tensor_name, bindings[i])
+
+    # Run inference using the new V3 API (no bindings arg needed here)
+    context.execute_async_v3(stream_handle=stream.handle)
+
+    # Transfer predictions back from the GPU.
+    [cuda.memcpy_dtoh_async(out.host, out.device, stream) for out in outputs]
+
+    # Synchronize the stream
+    stream.synchronize()
+
+    # Return only the host outputs.
+    return [out.host for out in outputs]
