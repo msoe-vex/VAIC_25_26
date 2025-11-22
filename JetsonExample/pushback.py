@@ -131,6 +131,7 @@ class Processing:
         self.color_frame_aligned = frames.get_color_frame()
 
         if not self.depth_frame_aligned or not self.color_frame_aligned:
+            print(f"WARNING: Invalid frames - depth: {self.depth_frame_aligned is not None}, color: {self.color_frame_aligned is not None}")
             self.depth_frame_aligned = None
             self.color_frame_aligned = None
 
@@ -138,6 +139,8 @@ class Processing:
         # Align frames and extract color and depth images
         # Apply a color map to the depth image
         self.align_frames(frames)
+        if self.depth_frame_aligned is None or self.color_frame_aligned is None:
+            return None, None, None
         depth_image = np.asanyarray(self.depth_frame_aligned.get_data())
         color_image = np.asanyarray(self.color_frame_aligned.get_data())
         # apply color correction to image
@@ -263,6 +266,9 @@ class MainApp:
                 start_time = time.time()  # start time of the loop
                 frames = self.camera.get_frames()
                 depth_image, color_image, depth_map = self.processing.process_frames(frames)
+                if color_image is None:
+                    print("Skipping frame - no valid camera data")
+                    continue
                 invoke_time = time.time()
                 output, detections = self.processing.detect_objects(color_image)
                 invoke_time = time.time() - invoke_time
