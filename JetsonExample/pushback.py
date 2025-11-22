@@ -228,7 +228,7 @@ class Rendering:
 class MainApp:
     def __init__(self):
         # Initialize various components including camera, processing, and rendering
-        print("Starting Initialization...")
+        print("Starting Initialization...", flush=True)
         self.camera = Camera()
         self.camera.start()
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
@@ -241,7 +241,7 @@ class MainApp:
         self.rendering = Rendering(self.v5Web)
 
         time.sleep(1)
-        print("Initialized")
+        print("Initialized", flush=True)
 
     def get_v5Pos(self):
         # Return V5Position object if GPS is connected but default values if not connected
@@ -256,14 +256,14 @@ class MainApp:
 
     def run(self):
         # Start main loop: capture frames, process, detect objects, compute detections, render and display
-        print("Starting V5 communications...")
+        print("Starting V5 communications...", flush=True)
         self.v5.start()
-        print("Starting V5 position tracking...")
+        print("Starting V5 position tracking...", flush=True)
         self.v5Pos.start()
-        print("Starting web server...")
+        print("Starting web server...", flush=True)
         self.v5Web.start()
         run_time = time.time()
-        print("\nStarting Loop")
+        print("\nStarting Loop", flush=True)
         try:
             while True:
                 start_time = time.time()  # start time of the loop
@@ -287,10 +287,10 @@ class MainApp:
 
 if __name__ == "__main__":
     try:
-        print("=== Starting VEXAI Application ===")
+        print("=== Starting VEXAI Application ===", flush=True)
         app = MainApp()  # Create the main application
         app.run()  # Run the application
     except Exception as e:
-        print(f"FATAL ERROR: {e}")
+        print(f"FATAL ERROR: {e}", flush=True)
         import traceback
         traceback.print_exc()
