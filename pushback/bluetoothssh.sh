@@ -73,6 +73,7 @@ dhcp-range=${DHCP_RANGE_START},${DHCP_RANGE_END},${DHCP_LEASE}
 dhcp-option=option:router,${PAN_IP_ADDR}
 dhcp-option=option:dns-server,${PAN_IP_ADDR}
 listen-address=127.0.0.1,${PAN_IP_ADDR}
+address=/msoe-nano/${PAN_IP_ADDR}
 DNSMASQ_EOF
 
 sudo systemctl enable dnsmasq.service
