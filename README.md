@@ -64,4 +64,4 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
 ## Connecting to the VEX AI Web Dashboard
 
 1. Connect to the Jetson Nano through the Bluetooth PAN as described above
-2. Open a web browser and navigate to `http://msoe-nano:3000/#/`
+2. Open a web browser and navigate to `http://msoe-nano1:3000/#/`

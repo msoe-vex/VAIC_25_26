@@ -74,6 +74,11 @@ dhcp-option=option:router,${PAN_IP_ADDR}
 dhcp-option=option:dns-server,${PAN_IP_ADDR}
 listen-address=127.0.0.1,${PAN_IP_ADDR}
 address=/msoe-nano/${PAN_IP_ADDR}
+address=/msoe-nano1/${PAN_IP_ADDR}
+address=/msoe-nano2/${PAN_IP_ADDR}
+address=/msoe-nano.local/${PAN_IP_ADDR}
+address=/msoe-nano1.local/${PAN_IP_ADDR}
+address=/msoe-nano2.local/${PAN_IP_ADDR}
 DNSMASQ_EOF
 
 sudo systemctl enable dnsmasq.service
