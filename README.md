@@ -49,11 +49,11 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
     ```
 8. Run this command (change the path to the SSH key if needed), enter the password for the Jetson Nano user, then type `exit` to close the connection
     ```
-    type C:\Users\%USERNAME%\.ssh\id_ed25519.pub | ssh msoe-nano1 "cat >> ~/.ssh/authorized_keys"
+    type C:\Users\%USERNAME%\.ssh\id_ed25519.pub | ssh msoe-nano "cat >> ~/.ssh/authorized_keys"
     ```
 9. In a new command prompt, run this command
     ```
-    ssh msoe-nano1
+    ssh msoe-nano
     ```
 10. Check that you see this:
     ```
@@ -64,4 +64,4 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
 ## Connecting to the VEX AI Web Dashboard
 
 1. Connect to the Jetson Nano through the Bluetooth PAN as described above
-2. Open a web browser and navigate to `http://msoe-nano1:3000/#/`
+2. Open a web browser and navigate to `http://msoe-nano:3000/#/`
