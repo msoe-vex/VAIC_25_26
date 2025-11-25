@@ -200,6 +200,7 @@ class V5SerialComms:
                         torch_tensor = torch.from_numpy(numpy_array).reshape(3,480,640)
                         output = model(torch_tensor.unsqueeze(0).float())
                         print(output.shape)
+                        # send output here once model is finished
                         self.__ser.write("#test|message")  # Write serialized data to the serial port
 
 
