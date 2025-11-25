@@ -3,11 +3,14 @@ import struct
 import threading
 from threading import Lock
 import json
+import numpy
+import torch
 from json import JSONEncoder
 import serial
 import time
 from V5Position import Position
-    
+from nano_model.dummy_model import DummyModel
+
 class ImageDetection:
     def __init__(self, x: int, y: int, width: int, height: int):
         # Initialize properties of ImageDetection class for x, y coordinates, width, and height
@@ -151,7 +154,8 @@ class V5SerialComms:
         self.__thread = threading.Thread(target=self.__run, args=())
         self.__thread.daemon = True
         self.__thread.start()
-
+    
+    @torch.inference_mode()
     def __run(self):
         count = 1
         while self.__started:  # Continue running while the thread is started
@@ -180,18 +184,23 @@ class V5SerialComms:
                 self.__ser = serial.Serial(port, 115200, timeout=10)
                 self.__ser.flushInput()
                 self.__ser.flushOutput()
-
+                model = DummyModel()
+                model.eval()
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
                     data = self.__ser.readline().decode("utf-8").rstrip()
-                    # print(data)
+                    print(data, flush=True)
                     if(data == "AA55CC3301"):
                         #send data
                         self.__detectionLock.acquire()
                         myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
                         self.__detectionLock.release()
                         data = myPacket.to_Serial()
-                        self.__ser.write(data)  # Write serialized data to the serial port
+                        numpy_array = numpy.frombuffer(data, dtype=numpy.uint8)
+                        torch_tensor = torch.from_numpy(numpy_array)
+                        output = model(torch_tensor.unsqueeze(0).float())
+                        print(output.shape)
+                        self.__ser.write("#test|message")  # Write serialized data to the serial port
 
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
