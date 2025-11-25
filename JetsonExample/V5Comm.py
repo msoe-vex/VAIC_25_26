@@ -197,7 +197,7 @@ class V5SerialComms:
                         self.__detectionLock.release()
                         data = myPacket.to_Serial()
                         numpy_array = numpy.frombuffer(data, dtype=numpy.uint8)
-                        torch_tensor = torch.from_numpy(numpy_array)
+                        torch_tensor = torch.from_numpy(numpy_array).reshape(3,480,640)
                         output = model(torch_tensor.unsqueeze(0).float())
                         print(output.shape)
                         self.__ser.write("#test|message")  # Write serialized data to the serial port
