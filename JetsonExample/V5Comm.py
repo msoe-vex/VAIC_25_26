@@ -190,7 +190,7 @@ class V5SerialComms:
                     # Read data from the serial port
                     data = self.__ser.readline().decode("utf-8").rstrip()
                     print(data, flush=True)
-                    if(data == "AA55CC3301"):
+                    """if(data == "AA55CC3301"):
                         #send data
                         self.__detectionLock.acquire()
                         myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
@@ -201,7 +201,7 @@ class V5SerialComms:
                         output = model(torch_tensor.unsqueeze(0).float())
                         print(output.shape)
                         # send output here once model is finished
-                        self.__ser.write("#test|message")  # Write serialized data to the serial port
+                        self.__ser.write("#test|message") """ # Write serialized data to the serial port
 
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
