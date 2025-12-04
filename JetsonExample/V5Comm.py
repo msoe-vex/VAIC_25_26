@@ -184,14 +184,15 @@ class V5SerialComms:
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
                     data = self.__ser.readline().decode("utf-8").rstrip()
-                    # print(data)
-                    if(data == "AA55CC3301"):
-                        #send data
-                        self.__detectionLock.acquire()
-                        myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
-                        self.__detectionLock.release()
-                        data = myPacket.to_Serial()
-                        self.__ser.write(data)  # Write serialized data to the serial port
+                    print(data, flush=True)
+                    self.__ser.write("#test|message")
+                    # if(data == "AA55CC3301"):
+                    #     #send data
+                    #     self.__detectionLock.acquire()
+                    #     myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
+                    #     self.__detectionLock.release()
+                    #     data = myPacket.to_Serial()
+                    #     self.__ser.write(data)  # Write serialized data to the serial port
 
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
