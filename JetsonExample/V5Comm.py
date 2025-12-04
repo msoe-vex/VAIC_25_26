@@ -185,7 +185,9 @@ class V5SerialComms:
                     # Read data from the serial port
                     data = self.__ser.readline().decode("utf-8").rstrip()
                     print(data, flush=True)
-                    self.__ser.write(bytes("#test|message", "utf-8"))
+                    # send a line that the C++ parser will recognize: "#header|body\n"
+                    self.__ser.write(b"#test|message\n")
+                    self.__ser.flush()
                     # if(data == "AA55CC3301"):
                     #     #send data
                     #     self.__detectionLock.acquire()
