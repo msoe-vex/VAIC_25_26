@@ -144,6 +144,7 @@ class V5SerialComms:
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
+        self.__observation = None
 
     def start(self):
         # Start serial communication thread
@@ -151,6 +152,13 @@ class V5SerialComms:
         self.__thread = threading.Thread(target=self.__run, args=())
         self.__thread.daemon = True
         self.__thread.start()
+
+    def __write(self, header: str, body: str):
+        # Write data to the serial port in the format "#header|body\n"
+        if(self.__ser != None and self.__ser.isOpen()):
+            line = f"#{header}|{body}\n"
+            self.__ser.write(line.encode('utf-8'))
+            self.__ser.flush()
 
     def __run(self):
         count = 1
@@ -186,15 +194,20 @@ class V5SerialComms:
                     data = self.__ser.readline().decode("utf-8").rstrip()
                     print(data, flush=True)
                     # send a line that the C++ parser will recognize: "#header|body\n"
-                    self.__ser.write(b"#test|message\n")
-                    self.__ser.flush()
-                    # if(data == "AA55CC3301"):
-                    #     #send data
-                    #     self.__detectionLock.acquire()
-                    #     myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
-                    #     self.__detectionLock.release()
-                    #     data = myPacket.to_Serial()
-                    #     self.__ser.write(data)  # Write serialized data to the serial port
+                    self.__write("test", "message")
+                    if(data == "READY"):
+                        pass
+                        # Get camera data
+
+                        # Choose action based o current observation
+
+                        # Generate instructions based on data
+
+                        # Send instructions to V5 Brain
+                    if(data == "pos"):
+                        # Parse position data, update observation
+                        pass
+                    
 
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
