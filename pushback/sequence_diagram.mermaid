@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant IC as Intel Cam
+    participant JN as Jetson Nano 1
+    participant R1 as Robot 1
+    participant R2 as Robot 2
+
+    %% 1. Camera Data
+    IC->>JN: send object positions
+
+    %% 2. Inter-Robot Communication
+    R2->>R1: send pos/orientation
+
+    %% 3. Robot to Jetson Communication
+    R1->>JN: send pos/orientation/ #blocks / action...
+
+    %% 4. Jetson to Robot Command
+    JN->>R1: send actions / list of points for path
