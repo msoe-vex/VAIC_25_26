@@ -190,6 +190,7 @@ class V5SerialComms:
                     # Read data from the serial port
                     data = self.__ser.readline().decode("utf-8").rstrip()
                     print(data, flush=True)
+                    self.__ser.write("#test|message")
                     """if(data == "AA55CC3301"):
                         #send data
                         self.__detectionLock.acquire()
