@@ -144,7 +144,7 @@ class V5SerialComms:
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
-        self.__observation = None
+        self.__observation = {}
 
     def start(self):
         # Start serial communication thread
@@ -191,11 +191,34 @@ class V5SerialComms:
 
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
-                    data = self.__ser.readline().decode("utf-8").rstrip()
+                    data = self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
+
+                    # Split data into header and body, if valid message
+                    # Expected format: "#header|body" or "header|body"
+                    header = ""
+                    body = ""
+
+                    if not data:
+                        continue
+
                     print(data, flush=True)
+
+                    # normalize payload (strip leading '#')
+                    payload = data[1:] if data.startswith('#') else data
+
+                    # only accept messages that contain a header and body separated by '|'
+                    if '|' not in payload:
+                        continue
+
+                    # split once into header and body
+                    header, body = payload.split('|', 1)
+                    header = header.strip()
+                    body = body.strip()
+
                     # send a line that the C++ parser will recognize: "#header|body\n"
                     self.__write("test", "message")
-                    if(data == "READY"):
+
+                    if header.upper() == "READY":
                         pass
                         # Get camera data
 
@@ -204,9 +227,27 @@ class V5SerialComms:
                         # Generate instructions based on data
 
                         # Send instructions to V5 Brain
-                    if(data == "pos"):
-                        # Parse position data, update observation
+                    
+                    if(header == "pos"):
+                        
+                        # Parse position data "x,y,theta" and update observation
+                        try:
+                            parts = [p.strip() for p in body.split(',')]
+                            if len(parts) < 3:
+                                raise ValueError("Expected 3 comma-separated values: x,y,theta")
+                            x = float(parts[0])
+                            y = float(parts[1])
+                            theta = float(parts[2])
+                        except Exception as e:
+                            print(f"Failed to parse pos payload '{body}': {e}")
+                            continue
+
+                        self.__observation["robot"]["x"] = x
+                        self.__observation["robot"]["y"] = y
+                        self.__observation["robot"]["theta"] = theta
+
                         pass
+                    
                     
 
 
