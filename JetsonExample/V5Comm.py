@@ -7,6 +7,11 @@ from json import JSONEncoder
 import serial
 import time
 from V5Position import Position
+
+from VEXAIRL.vex_model_run import VexModelRunner
+from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
+from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
+
     
 class ImageDetection:
     def __init__(self, x: int, y: int, width: int, height: int):
@@ -144,7 +149,15 @@ class V5SerialComms:
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
-        self.__observation = {}
+        self.__data = {}
+        self.__modelRunner = VexModelRunner(
+            "model.pt", 
+            VexAISkillsGame, 
+            Robot(
+                name="robot_0",
+                team=Team.RED,
+                size=RobotSize.INCH_15
+            ))
 
     def start(self):
         # Start serial communication thread
@@ -159,6 +172,24 @@ class V5SerialComms:
             line = f"#{header}|{body}\n"
             self.__ser.write(line.encode('utf-8'))
             self.__ser.flush()
+    
+    def __read(self):
+        # Read and return header and body based on "#header|body\n" format
+        if(self.__ser != None and self.__ser.isOpen()):
+            line =  self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
+            header = ""
+            body = ""
+            if not line:
+                return "", ""
+            # normalize payload (strip leading '#')
+            payload = line[1:] if line.startswith('#') else line
+            # only accept messages that contain a header and body separated by '|'
+            if '|' not in payload:
+                return "", ""
+            # split once into header and body
+            header, body = payload.split('|', 1)
+            return header.strip(), body.strip()
+        return "", ""
 
     def __run(self):
         count = 1
@@ -191,42 +222,26 @@ class V5SerialComms:
 
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
-                    data = self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
-
-                    # Split data into header and body, if valid message
-                    # Expected format: "#header|body" or "header|body"
-                    header = ""
-                    body = ""
-
-                    if not data:
-                        continue
-
-                    print(data, flush=True)
-
-                    # normalize payload (strip leading '#')
-                    payload = data[1:] if data.startswith('#') else data
-
-                    # only accept messages that contain a header and body separated by '|'
-                    if '|' not in payload:
-                        continue
-
-                    # split once into header and body
-                    header, body = payload.split('|', 1)
-                    header = header.strip()
-                    body = body.strip()
+                    header, body = self.__read()
 
                     # send a line that the C++ parser will recognize: "#header|body\n"
                     self.__write("test", "message")
 
-                    if header.upper() == "READY":
-                        pass
-                        # Get camera data
+                    if header.upper() == "ACTION_DONE":
+                        action = int(body)
+                        self.__modelRunner.run_action(action)
 
-                        # Choose action based o current observation
+                    if header.upper() == "READY" or header.upper() == "ACTION_DONE":
+                        # Get camera data and robot state
 
-                        # Generate instructions based on data
+                        # Use __detections to get detection data
 
-                        # Send instructions to V5 Brain
+                        split_actions =  self.__modelRunner.get_inference(self.__data)
+
+                        for action in split_actions:
+                            # Send each action to the V5 Brain
+                            self.__write("RUN_ACTION", str(action))
+
                     
                     if(header == "pos"):
                         
@@ -242,9 +257,9 @@ class V5SerialComms:
                             print(f"Failed to parse pos payload '{body}': {e}")
                             continue
 
-                        self.__observation["robot"]["x"] = x
-                        self.__observation["robot"]["y"] = y
-                        self.__observation["robot"]["theta"] = theta
+                        self.__data["robot"]["x"] = x
+                        self.__data["robot"]["y"] = y
+                        self.__data["robot"]["theta"] = theta
 
                         pass
                     

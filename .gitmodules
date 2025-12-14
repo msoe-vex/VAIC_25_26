@@ -1,0 +1,3 @@
+[submodule "VEX-AI-Reinforcement-Learning"]
+	path = VEXAIRL
+	url = https://github.com/msoe-vex/VEX-AI-Reinforcement-Learning.git
