@@ -150,14 +150,8 @@ class V5SerialComms:
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
         self.__data = {}
-        self.__modelRunner = VexModelRunner(
-            "model.pt", 
-            VexAISkillsGame, 
-            Robot(
-                name="robot_0",
-                team=Team.RED,
-                size=RobotSize.INCH_15
-            ))
+
+        self.__modelRunner: VexModelRunner = None
 
     def start(self):
         # Start serial communication thread
@@ -227,15 +221,37 @@ class V5SerialComms:
                     # send a line that the C++ parser will recognize: "#header|body\n"
                     self.__write("test", "message")
 
+                    if header.upper() == "INIT_MODEL":
+                        # Initialize the model runner
+
+                        # TODO: set based on message body
+                        robot = Robot(
+                            name="robot_0",
+                            team=Team.RED,
+                            size=RobotSize.INCH_15
+                        )
+                        game = VexAISkillsGame(robots=[robot])
+
+                        
+                        self.__modelRunner = VexModelRunner(
+                            model_path="model.pt",
+                            game=game,
+                        )
+
                     if header.upper() == "ACTION_DONE":
+                        if not self.__modelRunner:
+                            # Skip
+                            continue
                         action = int(body)
                         self.__modelRunner.run_action(action)
 
                     if header.upper() == "READY" or header.upper() == "ACTION_DONE":
+                        if not self.__modelRunner:
+                            # Skip
+                            continue
                         # Get camera data and robot state
 
                         # Use __detections to get detection data
-
                         split_actions =  self.__modelRunner.get_inference(self.__data)
 
                         for action in split_actions:
