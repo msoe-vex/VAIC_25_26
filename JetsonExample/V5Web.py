@@ -131,6 +131,10 @@ class V5WebData:
         for detect in nowObjects.detections:
             outList.append(detect.to_JSON())
 
+        print(f"[DEBUG] Detections count: {len(outList)}", flush=True)
+        if len(outList) > 0:
+            print(f"[DEBUG] First detection: {outList[0]}", flush=True)
+
         return outList
     
     def __getColorElement(self):
