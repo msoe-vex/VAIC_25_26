@@ -54,14 +54,30 @@ class Model:
             (135, 169),
             (344, 319),
             ],
-            "obj_threshold": [0.5, 0.5],  # Thresholds for each class (BallBlue, BallRed)
+            "obj_threshold": [0.01, 0.01],  # Very low threshold for debugging
             "nms_threshold": 0.5,
             "yolo_input_resolution": input_resolution_yolov3_HW,
         }
 
         # Perform post-processing
         postprocessor = PostprocessYOLO(**postprocessor_args)
+        
+        # Debug: Check raw model output values BEFORE postprocessing
+        for i, out in enumerate(outputs):
+            obj_channel = out[..., 4]  # Objectness scores are at index 4
+            # Apply sigmoid to get actual confidence
+            obj_sigmoid = 1.0 / (1.0 + np.exp(-obj_channel))
+            print(f"[DEBUG] Output {i}: obj_logit max={obj_channel.max():.4f}, obj_conf max={obj_sigmoid.max():.4f}", flush=True)
+        
         boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
+
+        # Debug: print detection results
+        if scores is not None and len(scores) > 0:
+            print(f"[DEBUG] DETECTIONS FOUND: {len(scores)}, max_score={max(scores):.4f}", flush=True)
+        else:
+            print(f"[DEBUG] No detections", flush=True)
+        if scores is not None and len(scores) > 0:
+            print(f"[DEBUG] Max score: {max(scores)}, Num detections: {len(scores)}", flush=True)
 
         Detections = []
 
