@@ -6,6 +6,12 @@ import json
 from json import JSONEncoder
 import serial
 import time
+import sys
+import os
+
+# Add repository root to path for VEXAIRL imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from V5Position import Position
 
 from VEXAIRL.vex_model_run import VexModelRunner
