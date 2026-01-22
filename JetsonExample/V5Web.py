@@ -167,13 +167,13 @@ class V5WebData:
 
         # Debug logging for depth image
         if pixelData is None:
-            print("[DEBUG] Depth image is None")
+            print("[DEBUG] Depth image is None", flush=True)
         elif not hasattr(pixelData, '__len__'):
-            print(f"[DEBUG] Depth image has no length, type: {type(pixelData)}")
+            print(f"[DEBUG] Depth image has no length, type: {type(pixelData)}", flush=True)
         elif len(pixelData) == 0:
-            print("[DEBUG] Depth image is empty (len=0)")
+            print("[DEBUG] Depth image is empty (len=0)", flush=True)
         else:
-            print(f"[DEBUG] Depth image OK - shape: {pixelData.shape}, dtype: {pixelData.dtype}")
+            print(f"[DEBUG] Depth image OK - shape: {pixelData.shape}, dtype: {pixelData.dtype}", flush=True)
 
         if pixelData is not None and len(pixelData) > 0:
             imageData['Valid'] = True
