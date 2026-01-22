@@ -54,7 +54,7 @@ class Model:
             (135, 169),
             (344, 319),
             ],
-            "obj_threshold": [0.1, 0.1],  # Very low threshold for debugging
+            "obj_threshold": [0.5, 0.5],  # Very low threshold for debugging
             "nms_threshold": 0.5,
             "yolo_input_resolution": input_resolution_yolov3_HW,
         }
