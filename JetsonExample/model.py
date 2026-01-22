@@ -23,6 +23,9 @@ class Model:
     def inference(self, inputImage):
         # Perform inference on the given image and return the bounding boxes, scores, and classes of detected objects.
 
+        # Try BGR conversion - RealSense gives RGB but YOLO may expect BGR
+        inputImage = inputImage[:, :, ::-1]  # RGB to BGR
+
         # Define input resolution and create preprocessor
         input_resolution_yolov3_HW = (320, 320)
         preprocessor = PreprocessYOLO(input_resolution_yolov3_HW)
