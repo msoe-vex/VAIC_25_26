@@ -165,6 +165,16 @@ class V5WebData:
         pixelData = self.__depthImage
         self.__dataLock.release()
 
+        # Debug logging for depth image
+        if pixelData is None:
+            print("[DEBUG] Depth image is None")
+        elif not hasattr(pixelData, '__len__'):
+            print(f"[DEBUG] Depth image has no length, type: {type(pixelData)}")
+        elif len(pixelData) == 0:
+            print("[DEBUG] Depth image is empty (len=0)")
+        else:
+            print(f"[DEBUG] Depth image OK - shape: {pixelData.shape}, dtype: {pixelData.dtype}")
+
         if pixelData is not None and len(pixelData) > 0:
             imageData['Valid'] = True
             imageData['Width'] = pixelData.shape[1]
