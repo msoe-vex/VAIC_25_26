@@ -54,7 +54,7 @@ class Model:
             (135, 169),
             (344, 319),
             ],
-            "obj_threshold": [0.5, 0.5],  # Different thresholds for each class label (Green, Red, Blue)
+            "obj_threshold": [0.3, 0.3],  # Lowered from 0.5 for debugging
             "nms_threshold": 0.5,
             "yolo_input_resolution": input_resolution_yolov3_HW,
         }
@@ -62,6 +62,12 @@ class Model:
         # Perform post-processing
         postprocessor = PostprocessYOLO(**postprocessor_args)
         boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
+
+        # Debug: print max confidence scores from raw outputs
+        print(f"[DEBUG] Model outputs shapes: {[o.shape for o in outputs]}", flush=True)
+        print(f"[DEBUG] Boxes: {boxes is not None}, Classes: {classes is not None}, Scores: {scores is not None}", flush=True)
+        if scores is not None and len(scores) > 0:
+            print(f"[DEBUG] Max score: {max(scores)}, Num detections: {len(scores)}", flush=True)
 
         Detections = []
 
