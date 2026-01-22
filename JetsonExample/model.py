@@ -61,11 +61,16 @@ class Model:
 
         # Perform post-processing
         postprocessor = PostprocessYOLO(**postprocessor_args)
+        
+        # Debug: Check raw model output values BEFORE postprocessing
+        for i, out in enumerate(outputs):
+            obj_channel = out[..., 4]  # Objectness scores are at index 4
+            print(f"[DEBUG] Output {i}: shape={out.shape}, obj min={obj_channel.min():.4f}, max={obj_channel.max():.4f}, mean={obj_channel.mean():.4f}", flush=True)
+        
         boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
 
-        # Debug: print max confidence scores from raw outputs
-        print(f"[DEBUG] Model outputs shapes: {[o.shape for o in outputs]}", flush=True)
-        print(f"[DEBUG] Boxes: {boxes is not None}, Classes: {classes is not None}, Scores: {scores is not None}", flush=True)
+        # Debug: print detection results
+        print(f"[DEBUG] Boxes: {boxes is not None and len(boxes) > 0}, Classes: {classes is not None and len(classes) > 0 if classes is not None else False}, Scores: {scores is not None and len(scores) > 0 if scores is not None else False}", flush=True)
         if scores is not None and len(scores) > 0:
             print(f"[DEBUG] Max score: {max(scores)}, Num detections: {len(scores)}", flush=True)
 
