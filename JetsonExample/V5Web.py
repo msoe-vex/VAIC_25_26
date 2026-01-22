@@ -142,7 +142,7 @@ class V5WebData:
         pixelData = self.__colorImage
         self.__dataLock.release()
 
-        if(len(pixelData) > 0):
+        if pixelData is not None and len(pixelData) > 0:
             imageData['Valid'] = True
             imageData['Width'] = pixelData.shape[1]
             imageData['Height'] = pixelData.shape[0]
@@ -165,11 +165,12 @@ class V5WebData:
         pixelData = self.__depthImage
         self.__dataLock.release()
 
-        if(len(pixelData) > 0):
+        if pixelData is not None and len(pixelData) > 0:
             imageData['Valid'] = True
             imageData['Width'] = pixelData.shape[1]
             imageData['Height'] = pixelData.shape[0]
-            imageData['Data'] = base64.b64encode(np.array(cv2.imencode(".jpeg", pixelData)[1]).tobytes()).decode('utf-8')
+            buffer = cv2.imencode(".jpeg", pixelData)[1]
+            imageData['Data'] = base64.b64encode(buffer).decode('utf-8')
         else:
             imageData['Valid'] = False
             imageData['Error'] = "Image Unavailable"
