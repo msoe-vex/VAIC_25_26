@@ -17,7 +17,7 @@ from V5Position import Position
 from VEXAIRL.vex_model_run import VexModelRunner
 from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
-
+from VEXAIRL.pushback.pushback import ObsIndex
     
 class ImageDetection:
     def __init__(self, x: int, y: int, width: int, height: int):
@@ -156,6 +156,7 @@ class V5SerialComms:
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
         self.__data = {}
+        self.__observation = np.array([])
 
         self.__modelRunner: VexModelRunner = None
 
@@ -258,7 +259,7 @@ class V5SerialComms:
                         # Get camera data and robot state
 
                         # Use __detections to get detection data
-                        split_actions =  self.__modelRunner.get_inference(self.__data)
+                        split_actions =  self.__modelRunner.get_inference(self.__observation)
 
                         for action in split_actions:
                             # Send each action to the V5 Brain
@@ -279,9 +280,9 @@ class V5SerialComms:
                             print(f"Failed to parse pos payload '{body}': {e}")
                             continue
 
-                        self.__data["robot"]["x"] = x
-                        self.__data["robot"]["y"] = y
-                        self.__data["robot"]["theta"] = theta
+                        self.__observation[ObsIndex.ROBOT_X] = x
+                        self.__observation[ObsIndex.ROBOT_Y] = y
+                        self.__observation[ObsIndex.ROBOT_THETA] = theta
 
                         pass
                     
