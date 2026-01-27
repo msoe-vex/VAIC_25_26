@@ -221,6 +221,8 @@ class V5SerialComms:
                 self.__ser.flushInput()
                 self.__ser.flushOutput()
 
+                count = 0
+
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
                     header, body = self.__read()
@@ -280,14 +282,33 @@ class V5SerialComms:
                             print(f"Failed to parse pos payload '{body}': {e}")
                             continue
 
-                        self.__observation[ObsIndex.ROBOT_X] = x
-                        self.__observation[ObsIndex.ROBOT_Y] = y
-                        self.__observation[ObsIndex.ROBOT_THETA] = theta
+                        self.__observation[ObsIndex.SELF_POS_X] = x
+                        self.__observation[ObsIndex.SELF_POS_Y] = y
+                        self.__observation[ObsIndex.SELF_ORIENT] = theta
 
                         pass
                     
-                    
 
+                    if(header == "pos2"):
+                        
+                        # Parse position data "x,y,theta" and update observation
+                        try:
+                            parts = [p.strip() for p in body.split(',')]
+                            if len(parts) < 3:
+                                raise ValueError("Expected 3 comma-separated values: x,y,theta")
+                            x = float(parts[0])
+                            y = float(parts[1])
+                            theta = float(parts[2])
+                        except Exception as e:
+                            print(f"Failed to parse pos payload '{body}': {e}")
+                            continue
+
+                        self.__observation[ObsIndex.TEAMMATE_START] = x
+                        self.__observation[ObsIndex.TEAMMATE_START+1] = y
+                        self.__observation[ObsIndex.TEAMMATE_START+2] = theta
+
+                        pass
+                    
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
             except serial.SerialException as e:
