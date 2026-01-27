@@ -6,18 +6,9 @@ import json
 from json import JSONEncoder
 import serial
 import time
-import sys
-import os
-
-# Add repository root to path for VEXAIRL imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import numpy as np
 
 from V5Position import Position
-
-from VEXAIRL.vex_model_run import VexModelRunner
-from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
-from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
-from VEXAIRL.pushback.pushback import ObsIndex
     
 class ImageDetection:
     def __init__(self, x: int, y: int, width: int, height: int):
@@ -148,17 +139,22 @@ class V5SerialComms:
 
     __MAP_PACKET_TYPE = 0x0001
 
-    def __init__(self, port = None):
-        # Initialize properties of V5SerialComms class, including port, started status, and lock
+    def __init__(self, port=None, handler=None):
+        """
+        Initialize V5 serial communications.
+        
+        Args:
+            port: Serial port to use (auto-detected if None)
+            handler: Optional callback handler (e.g., PushbackHandler) for 
+                     processing received messages with headers
+        """
         self.__dev = port
         self.__started = False
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
         self.__data = {}
-        self.__observation = np.array([])
-
-        self.__modelRunner: VexModelRunner = None
+        self.__handler = handler
 
     def start(self):
         # Start serial communication thread
@@ -227,87 +223,12 @@ class V5SerialComms:
                     # Read data from the serial port
                     header, body = self.__read()
 
-                    # send a line that the C++ parser will recognize: "#header|body\n"
-                    self.__write("test", "message")
+                    # # send a line that the C++ parser will recognize: "#header|body\n"
+                    # self.__write("test", "message")
 
-                    if header.upper() == "INIT_MODEL":
-                        # Initialize the model runner
-
-                        # TODO: set based on message body
-                        robot = Robot(
-                            name="robot_0",
-                            team=Team.RED,
-                            size=RobotSize.INCH_15
-                        )
-                        game = VexAISkillsGame(robots=[robot])
-
-                        
-                        self.__modelRunner = VexModelRunner(
-                            model_path="model.pt",
-                            game=game,
-                        )
-
-                    if header.upper() == "ACTION_DONE":
-                        if not self.__modelRunner:
-                            # Skip
-                            continue
-                        action = int(body)
-                        self.__modelRunner.run_action(action)
-
-                    if header.upper() == "READY" or header.upper() == "ACTION_DONE":
-                        if not self.__modelRunner:
-                            # Skip
-                            continue
-                        # Get camera data and robot state
-
-                        # Use __detections to get detection data
-                        split_actions =  self.__modelRunner.get_inference(self.__observation)
-
-                        for action in split_actions:
-                            # Send each action to the V5 Brain
-                            self.__write("RUN_ACTION", str(action))
-
-                    
-                    if(header == "pos"):
-                        
-                        # Parse position data "x,y,theta" and update observation
-                        try:
-                            parts = [p.strip() for p in body.split(',')]
-                            if len(parts) < 3:
-                                raise ValueError("Expected 3 comma-separated values: x,y,theta")
-                            x = float(parts[0])
-                            y = float(parts[1])
-                            theta = float(parts[2])
-                        except Exception as e:
-                            print(f"Failed to parse pos payload '{body}': {e}")
-                            continue
-
-                        self.__observation[ObsIndex.SELF_POS_X] = x
-                        self.__observation[ObsIndex.SELF_POS_Y] = y
-                        self.__observation[ObsIndex.SELF_ORIENT] = theta
-
-                        pass
-                    
-
-                    if(header == "pos2"):
-                        
-                        # Parse position data "x,y,theta" and update observation
-                        try:
-                            parts = [p.strip() for p in body.split(',')]
-                            if len(parts) < 3:
-                                raise ValueError("Expected 3 comma-separated values: x,y,theta")
-                            x = float(parts[0])
-                            y = float(parts[1])
-                            theta = float(parts[2])
-                        except Exception as e:
-                            print(f"Failed to parse pos payload '{body}': {e}")
-                            continue
-
-                        self.__observation[ObsIndex.TEAMMATE_START] = x
-                        self.__observation[ObsIndex.TEAMMATE_START+1] = y
-                        self.__observation[ObsIndex.TEAMMATE_START+2] = theta
-
-                        pass
+                    # Delegate message handling to the callback handler
+                    if self.__handler:
+                        self.__handler.handle(header, body)
                     
 
             # To close the serial port gracefully, use Ctrl+C to break the loop

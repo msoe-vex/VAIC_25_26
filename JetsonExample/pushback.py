@@ -17,6 +17,17 @@ from V5Web import Statistics
 
 from model import Model, rawDetection
 
+import sys
+import os
+
+# Add repository root to path for VEXAIRL imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from VEXAIRL.vex_model_run import VexModelRunner
+from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
+from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
+from VEXAIRL.pushback.pushback import ObsIndex
+
 
 class Camera:
     # Class handles Camera object instantiation and data requests.
@@ -225,6 +236,176 @@ class Rendering:
             cv2.destroyAllWindows()
 
 
+
+class PushbackHandler:
+    """
+    Callback handler for V5Comm to manage VEXAIRL observations and model inference.
+    """
+    
+    # Block class IDs from detection model
+    CLASS_RED_BLOCK = 0
+    CLASS_BLUE_BLOCK = 1
+    
+    MAX_TRACKED_BLOCKS = 15
+    
+    def __init__(self, write_func=None):
+        self._model_runner: VexModelRunner = None
+        self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+        self._write = write_func
+        self._team: Team = None  # Set when model is initialized
+        
+    def set_write_func(self, write_func):
+        """Set the write callback after construction."""
+        self._write = write_func
+        
+    @property
+    def observation(self):
+        return self._observation
+    
+    @property
+    def model_runner(self):
+        return self._model_runner
+    
+    def handle(self, header: str, body: str) -> None:
+        """Handle incoming USB message from V5Comm."""
+        header_upper = header.upper()
+        
+        if header_upper == "INIT_MODEL":
+            parts = body.split(',')
+            if len(parts) < 4:
+                raise ValueError("Expected 4 comma-separated values: name, team, size, model_path")
+            name = parts[0]
+            team = Team(parts[1])
+            size = RobotSize(parts[2])
+            model_path = parts[3]
+
+            self._team = team  # Store team for block classification
+
+            robot = Robot(
+                name=name,
+                team=team,
+                size=size
+            )
+            game = VexAISkillsGame(robots=[robot])
+            
+            self._model_runner = VexModelRunner(
+                model_path=model_path,
+                game=game,
+            )
+            self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+            
+        elif header_upper == "ACTION_DONE":
+            # Update model state after action completion, then run inference
+            if body and self._model_runner:
+                action = int(body)
+                self._model_runner.run_action(action)
+            # Run inference
+            if self._model_runner and self._write:
+                split_actions = self._model_runner.get_inference(self._observation)
+                for action in split_actions:
+                    self._write("RUN_ACTION", str(action))
+            
+        elif header_upper == "READY":
+            # Run inference
+            if self._model_runner and self._write:
+                split_actions = self._model_runner.get_inference(self._observation)
+                for action in split_actions:
+                    self._write("RUN_ACTION", str(action))
+            
+        elif header == "pos":
+            # Update self position
+            try:
+                parts = [p.strip() for p in body.split(',')]
+                if len(parts) >= 3:
+                    self._observation[ObsIndex.SELF_POS_X] = float(parts[0])
+                    self._observation[ObsIndex.SELF_POS_Y] = float(parts[1])
+                    self._observation[ObsIndex.SELF_ORIENT] = float(parts[2])
+            except Exception as e:
+                print(f"Failed to parse pos payload '{body}': {e}")
+            
+        elif header == "pos2":
+            # Update teammate position
+            try:
+                parts = [p.strip() for p in body.split(',')]
+                if len(parts) >= 3:
+                    self._observation[ObsIndex.TEAMMATE_START] = float(parts[0])
+                    self._observation[ObsIndex.TEAMMATE_START + 1] = float(parts[1])
+                    self._observation[ObsIndex.TEAMMATE_START + 2] = float(parts[2])
+            except Exception as e:
+                print(f"Failed to parse pos2 payload '{body}': {e}")
+    
+    def handle_detections(self, detections: list) -> None:
+        """
+        Handle detections callback from camera processing.
+        Updates block positions in the observation.
+        
+        Args:
+            detections: List of Detection objects with classID and mapLocation
+        """
+        # Separate blocks by color
+        friendly_blocks = []
+        opponent_blocks = []
+        
+        robot_x = self._observation[ObsIndex.SELF_POS_X]
+        robot_y = self._observation[ObsIndex.SELF_POS_Y]
+        
+        for det in detections:
+            # Get map position
+            x = det.mapLocattion.x
+            y = det.mapLocattion.y
+            
+            # Calculate distance from robot for sorting
+            dist = np.sqrt((x - robot_x)**2 + (y - robot_y)**2)
+            
+            # Classify as friendly or opponent based on team
+            is_friendly = False
+            if self._team == Team.RED and det.classID == self.CLASS_RED_BLOCK:
+                is_friendly = True
+            elif self._team == Team.BLUE and det.classID == self.CLASS_BLUE_BLOCK:
+                is_friendly = True
+            
+            block_info = (dist, x, y)
+            if is_friendly:
+                friendly_blocks.append(block_info)
+            else:
+                opponent_blocks.append(block_info)
+        
+        # Sort by distance (closest first)
+        friendly_blocks.sort(key=lambda b: b[0])
+        opponent_blocks.sort(key=lambda b: b[0])
+        
+        # Update counts
+        self._observation[ObsIndex.FRIENDLY_BLOCK_COUNT] = float(len(friendly_blocks))
+        self._observation[ObsIndex.OPPONENT_BLOCK_COUNT] = float(len(opponent_blocks))
+        
+        # Update friendly block positions (up to MAX_TRACKED_BLOCKS)
+        for i in range(self.MAX_TRACKED_BLOCKS):
+            idx = ObsIndex.FRIENDLY_BLOCKS_START + i * 2
+            if i < len(friendly_blocks):
+                self._observation[idx] = friendly_blocks[i][1]      # x
+                self._observation[idx + 1] = friendly_blocks[i][2]  # y
+            else:
+                # Sentinel value for empty slots
+                self._observation[idx] = -999.0
+                self._observation[idx + 1] = -999.0
+        
+        # Update opponent block positions (up to MAX_TRACKED_BLOCKS)
+        for i in range(self.MAX_TRACKED_BLOCKS):
+            idx = ObsIndex.OPPONENT_BLOCKS_START + i * 2
+            if i < len(opponent_blocks):
+                self._observation[idx] = opponent_blocks[i][1]      # x
+                self._observation[idx + 1] = opponent_blocks[i][2]  # y
+            else:
+                # Sentinel value for empty slots
+                self._observation[idx] = -999.0
+                self._observation[idx + 1] = -999.0
+    
+    def update_observation(self, index: int, value: float) -> None:
+        """Directly update a specific observation index."""
+        if 0 <= index < ObsIndex.TOTAL:
+            self._observation[index] = value
+
+
 class MainApp:
     def __init__(self):
         # Initialize various components including camera, processing, and rendering
@@ -233,7 +414,13 @@ class MainApp:
         self.camera.start()
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
 
-        self.v5 = V5SerialComms()
+        # Create the pushback handler for VEXAIRL model management
+        self.pushback_handler = PushbackHandler()
+
+        self.v5 = V5SerialComms(handler=self.pushback_handler)
+        
+        # Wire up the write callback so handler can send messages back
+        self.pushback_handler.set_write_func(self.v5._V5SerialComms__write)
         self.v5Map = MapPosition()
         self.v5Pos = V5GPS()
         self.v5Web = V5WebData(self.v5Map, self.v5Pos, self.processing)
@@ -276,6 +463,10 @@ class MainApp:
                 output, detections = self.processing.detect_objects(color_image)
                 invoke_time = time.time() - invoke_time
                 aiRecord = self.processing.compute_detections(self, detections, depth_image)
+                
+                # Update observation with detected block positions
+                self.pushback_handler.handle_detections(aiRecord.detections)
+                
                 self.set_v5(aiRecord)
                 self.rendering.set_images(output, depth_map)
                 self.rendering.set_detection_data(aiRecord)
