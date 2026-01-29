@@ -131,10 +131,6 @@ class V5WebData:
         for detect in nowObjects.detections:
             outList.append(detect.to_JSON())
 
-        print(f"[DEBUG] Detections count: {len(outList)}", flush=True)
-        if len(outList) > 0:
-            print(f"[DEBUG] First detection: {outList[0]}", flush=True)
-
         return outList
     
     def __getColorElement(self):
@@ -168,16 +164,6 @@ class V5WebData:
         self.__dataLock.acquire()
         pixelData = self.__depthImage
         self.__dataLock.release()
-
-        # Debug logging for depth image
-        if pixelData is None:
-            print("[DEBUG] Depth image is None", flush=True)
-        elif not hasattr(pixelData, '__len__'):
-            print(f"[DEBUG] Depth image has no length, type: {type(pixelData)}", flush=True)
-        elif len(pixelData) == 0:
-            print("[DEBUG] Depth image is empty (len=0)", flush=True)
-        else:
-            print(f"[DEBUG] Depth image OK - shape: {pixelData.shape}, dtype: {pixelData.dtype}", flush=True)
 
         if pixelData is not None and len(pixelData) > 0:
             imageData['Valid'] = True

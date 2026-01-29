@@ -276,12 +276,6 @@ class PushbackHandler:
         if self._start_time is not None and self._total_time is not None:
             self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
 
-        # Merge tracker state from model_runner into local observation
-        self._model_runner.game.update_observation_from_tracker(
-            agent=self._model_runner.robot.name,
-            observation=self._observation
-        )
-
         action, split_actions = self._model_runner.get_inference(self._observation)
         # Format: action_id\ncommand1\ncommand2\n...
         send_header = "RUN_ACTION"
