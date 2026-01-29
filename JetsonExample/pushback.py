@@ -288,24 +288,32 @@ class PushbackHandler:
         
         if rec_header_upper == "INIT_MODEL":
             parts = rec_body.split(',')
-            if len(parts) < 4:
-                raise ValueError("Expected 4 comma-separated values: name, team, size, model_path")
-            name = parts[0]
-            team = Team(parts[1])
-            size = RobotSize(parts[2])
-            model_path = parts[3]
+            if len(parts) < 8:
+                raise ValueError("Expected 8 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient")
+            name = parts[0].strip()
+            team = Team(parts[1].strip().lower())
+            size = RobotSize(parts[2].strip())
+            length = float(parts[3].strip())
+            width = float(parts[4].strip())
+            start_x = float(parts[5].strip())
+            start_y = float(parts[6].strip())
+            start_orient = float(parts[7].strip())
 
             self._team = team  # Store team for block classification
 
             robot = Robot(
                 name=name,
                 team=team,
-                size=size
+                size=size,
+                length=length,
+                width=width,
+                start_position=np.array([start_x, start_y], dtype=np.float32),
+                start_orientation=start_orient
             )
             game = VexAISkillsGame(robots=[robot])
             
             self._model_runner = VexModelRunner(
-                model_path=model_path,
+                model_path="./models/" + name,
                 game=game,
             )
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
