@@ -279,7 +279,6 @@ class PushbackHandler:
         # Merge tracker state from model_runner into local observation
         self._model_runner.game.update_observation_from_tracker(
             agent=self._model_runner.robot.name,
-            state=self._model_runner.game_state,
             observation=self._observation
         )
 
