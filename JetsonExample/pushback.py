@@ -253,6 +253,8 @@ class PushbackHandler:
         self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
         self._write = write_func
         self._team: Team = None  # Set when model is initialized
+        self._start_time: float = None
+        self._total_time: float = None
         
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
@@ -265,13 +267,34 @@ class PushbackHandler:
     @property
     def model_runner(self):
         return self._model_runner
+
+    def _send_action(self):
+        if self._model_runner is None or self._write is None:
+            return
+
+        # Update time remaining
+        if self._start_time is not None and self._total_time is not None:
+            self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
+
+        # Merge tracker state from model_runner into local observation
+        self._model_runner.game.update_observation_from_tracker(
+            agent=self._model_runner.robot.name,
+            state=self._model_runner.game_state,
+            observation=self._observation
+        )
+
+        action, split_actions = self._model_runner.get_inference(self._observation)
+        # Format: action_id\ncommand1\ncommand2\n...
+        send_header = "RUN_ACTION"
+        send_body = str(action) + "\n" + "\n".join(split_actions)
+        self._write(send_header, send_body)
     
-    def handle(self, header: str, body: str) -> None:
+    def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
-        header_upper = header.upper()
+        rec_header_upper = rec_header.upper()
         
-        if header_upper == "INIT_MODEL":
-            parts = body.split(',')
+        if rec_header_upper == "INIT_MODEL":
+            parts = rec_body.split(',')
             if len(parts) < 4:
                 raise ValueError("Expected 4 comma-separated values: name, team, size, model_path")
             name = parts[0]
@@ -294,45 +317,39 @@ class PushbackHandler:
             )
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
             
-        elif header_upper == "ACTION_DONE":
+        elif rec_header_upper == "ACTION_DONE":
             # Update model state after action completion, then run inference
-            if body and self._model_runner:
-                action = int(body)
+            if rec_body and self._model_runner:
+                action = int(rec_body)
                 self._model_runner.run_action(action)
-            # Run inference
-            if self._model_runner and self._write:
-                split_actions = self._model_runner.get_inference(self._observation)
-                for action in split_actions:
-                    self._write("RUN_ACTION", str(action))
+            self._send_action()
             
-        elif header_upper == "READY":
-            # Run inference
-            if self._model_runner and self._write:
-                split_actions = self._model_runner.get_inference(self._observation)
-                for action in split_actions:
-                    self._write("RUN_ACTION", str(action))
+        elif rec_header_upper == "START":
+            self._start_time = time.time()
+            self._total_time = float(rec_body)
+            self._send_action()
             
-        elif header == "pos":
+        elif rec_header == "pos":
             # Update self position
             try:
-                parts = [p.strip() for p in body.split(',')]
+                parts = [p.strip() for p in rec_body.split(',')]
                 if len(parts) >= 3:
                     self._observation[ObsIndex.SELF_POS_X] = float(parts[0])
                     self._observation[ObsIndex.SELF_POS_Y] = float(parts[1])
                     self._observation[ObsIndex.SELF_ORIENT] = float(parts[2])
             except Exception as e:
-                print(f"Failed to parse pos payload '{body}': {e}")
+                print(f"Failed to parse pos payload '{rec_body}': {e}")
             
-        elif header == "pos2":
+        elif rec_header == "pos2":
             # Update teammate position
             try:
-                parts = [p.strip() for p in body.split(',')]
+                parts = [p.strip() for p in rec_body.split(',')]
                 if len(parts) >= 3:
                     self._observation[ObsIndex.TEAMMATE_START] = float(parts[0])
                     self._observation[ObsIndex.TEAMMATE_START + 1] = float(parts[1])
                     self._observation[ObsIndex.TEAMMATE_START + 2] = float(parts[2])
             except Exception as e:
-                print(f"Failed to parse pos2 payload '{body}': {e}")
+                print(f"Failed to parse pos2 payload '{rec_body}': {e}")
     
     def handle_detections(self, detections: list) -> None:
         """
