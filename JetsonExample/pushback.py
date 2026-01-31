@@ -473,6 +473,10 @@ class MainApp:
         print("Starting web server...", flush=True)
         self.v5Web.start()
         run_time = time.time()
+
+        # For testing, initialize model directly
+        self.pushback_handler.handle("INIT_MODEL", "red_robot_0,red,15,15,15,0,0,0")
+
         print("\nStarting Loop", flush=True)
         try:
             while True:
