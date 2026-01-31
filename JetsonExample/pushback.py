@@ -13,7 +13,7 @@ from V5Comm import V5SerialComms
 from V5Position import Position
 from V5Position import V5GPS
 from V5Web import V5WebData
-from V5Web import Statistics
+from V5Web import Statistics, CameraOffset, GPSOffset
 
 from model import Model, rawDetection
 
@@ -28,6 +28,9 @@ from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
 from VEXAIRL.pushback.pushback import ObsIndex
 
+
+METERS_TO_INCHES = 39.3701
+INCHES_TO_METERS = 1 / METERS_TO_INCHES
 
 class Camera:
     # Class handles Camera object instantiation and data requests.
@@ -248,13 +251,15 @@ class PushbackHandler:
     
     MAX_TRACKED_BLOCKS = 15
     
-    def __init__(self, write_func=None):
+    def __init__(self, write_func=None, update_camera_func=None, update_gps_func=None):
         self._model_runner: VexModelRunner = None
         self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
         self._write = write_func
         self._team: Team = None  # Set when model is initialized
         self._start_time: float = None
         self._total_time: float = None
+        self._update_camera = update_camera_func
+        self._update_gps = update_gps_func
         
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
@@ -290,10 +295,10 @@ class PushbackHandler:
         """Handle incoming USB message from V5Comm."""
         rec_header_upper = rec_header.upper()
         
-        if rec_header_upper == "INIT_MODEL":
+        if rec_header_upper == "INIT":
             parts = rec_body.split(',')
-            if len(parts) < 8:
-                raise ValueError("Expected 8 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient")
+            if len(parts) < 16:
+                raise ValueError("Expected 16 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient, cam_x, cam_y, cam_z, cam_heading, cam_elevation, gps_x, gps_y, gps_heading")
             name = parts[0].strip()
             team = Team(parts[1].strip().lower())
             size = RobotSize(int(parts[2].strip()))
@@ -302,6 +307,17 @@ class PushbackHandler:
             start_x = float(parts[5].strip())
             start_y = float(parts[6].strip())
             start_orient = float(parts[7].strip())
+            cam_x = float(parts[8].strip())*INCHES_TO_METERS
+            cam_y = float(parts[9].strip())*INCHES_TO_METERS
+            cam_z = float(parts[10].strip())*INCHES_TO_METERS
+            cam_heading = float(parts[11].strip())
+            cam_elevation = float(parts[12].strip())
+            gps_x = float(parts[13].strip())*INCHES_TO_METERS
+            gps_y = float(parts[14].strip())*INCHES_TO_METERS
+            gps_heading = float(parts[15].strip())
+
+            self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
+            self._update_gps(GPSOffset(gps_x, gps_y, "meters", gps_heading))
 
             self._team = team  # Store team for block classification
 
@@ -373,12 +389,14 @@ class PushbackHandler:
         robot_x = self._observation[ObsIndex.SELF_POS_X]
         robot_y = self._observation[ObsIndex.SELF_POS_Y]
         
+        def clamp(value, min_value, max_value):
+            return max(min_value, min(value, max_value))
+
         for det in detections:
             # Get map position
-            x = det.mapLocation.x
-            y = det.mapLocation.y
-            z = det.mapLocation.z
-
+            x = clamp(det.mapLocation.x*METERS_TO_INCHES, -72, 72)
+            y = clamp(det.mapLocation.y*METERS_TO_INCHES, -72, 72)
+            z = clamp(det.mapLocation.z*METERS_TO_INCHES, -72, 72)
             print(f"[DEBUG] Detection ClassID: {det.classID}, Position: ({x}, {y}, {z})", flush=True)
 
             if np.isnan(x) or np.isnan(y):
@@ -482,7 +500,7 @@ class MainApp:
         run_time = time.time()
 
         # For testing, initialize model directly
-        self.pushback_handler.handle("INIT_MODEL", "red_robot_0,red,15,15,15,0,0,0")
+        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,12,180")
 
         print("\nStarting Loop", flush=True)
         try:
