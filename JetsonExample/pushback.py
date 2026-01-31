@@ -282,7 +282,7 @@ class PushbackHandler:
         send_body = str(action) + "\n" + "\n".join(split_actions)
         self._write(send_header, send_body)
 
-        print(f"[DEBUG] Sent action {action} with commands: {split_actions}")
+        print(f"[DEBUG] Sent action {action} with commands: {split_actions}", flush=True)
     
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
