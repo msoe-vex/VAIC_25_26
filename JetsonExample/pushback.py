@@ -113,36 +113,50 @@ class Processing:
         height = detection.Height
         width = detection.Width
 
-        low_limit_y = 45
-        high_limit_y = 55
-        low_limit_x = 45
-        high_limit_x = 55
-        # Calculate the indices of 10% of the detection.
+        # Calculate the indices of 50% of the detection (center crop)
+        # using 25% margin on each side (25-75 range)
+        low_limit_y = 25
+        high_limit_y = 75
+        low_limit_x = 25
+        high_limit_x = 75
+        
         top = int(detection.y) + height * low_limit_y // 100
         bottom = int(detection.y) + height * high_limit_y // 100
         left = int(detection.x) + width * low_limit_x // 100
         right = int(detection.x) + width * high_limit_x // 100
 
-        # Extract depth values and scale them
-        top_left = self.project_color_to_depth(self.depth_frame_aligned.get_data(), (top, left))
-        bottom_right = self.project_color_to_depth(self.depth_frame_aligned.get_data(), (bottom, right))
+        # Ensure indices are within bounds
+        top = max(0, top)
+        left = max(0, left)
+        bottom = min(depth_img.shape[0], bottom)
+        right = min(depth_img.shape[1], right)
 
-        r1, c1 = top_left
-        r2, c2 = bottom_right
-        depth_img = depth_img[r1:r2, c1:c2]
-        depth_img = depth_img * self.depth_scale
+        # Slice depth image directly (frames are aligned)
+        depth_slice = depth_img[top:bottom, left:right]
+        
+        # Apply depth scale
+        depth_slice = depth_slice * self.depth_scale
+        
         # Filter non-zero depth values
-        depth_img = depth_img[depth_img != 0]
-        # Compute and return mean depth value
-        meanDepth = np.nanmean(depth_img)
+        valid_depths = depth_slice[depth_slice != 0]
+
+        if valid_depths.size == 0:
+            return -1
+
+        # Compute mean depth value
+        meanDepth = np.nanmean(valid_depths)
+        
+        if np.isnan(meanDepth):
+            return -1
+            
         return meanDepth
 
     def align_frames(self, frames):
         # Align depth frames to color frames
-        #aligned_frames = self.align.process(frames)
+        aligned_frames = self.align.process(frames)
         # Get the aligned frames and validate them
-        self.depth_frame_aligned = frames.get_depth_frame()
-        self.color_frame_aligned = frames.get_color_frame()
+        self.depth_frame_aligned = aligned_frames.get_depth_frame()
+        self.color_frame_aligned = aligned_frames.get_color_frame()
 
         if not self.depth_frame_aligned or not self.color_frame_aligned:
             print(f"WARNING: Invalid frames - depth: {self.depth_frame_aligned is not None}, color: {self.color_frame_aligned is not None}")
