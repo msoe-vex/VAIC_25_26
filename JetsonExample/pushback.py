@@ -375,8 +375,11 @@ class PushbackHandler:
         
         for det in detections:
             # Get map position
-            x = det.mapLocattion.x
-            y = det.mapLocattion.y
+            x = det.mapLocation.x
+            y = det.mapLocation.y
+            z = det.mapLocation.z
+
+            print(f"[DEBUG] Detection ClassID: {det.classID}, Position: ({x}, {y}, {z})", flush=True)
 
             if np.isnan(x) or np.isnan(y):
                 continue

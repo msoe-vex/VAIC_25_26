@@ -48,13 +48,13 @@ class Detection:
         self.probability = probability
         self.depth = depth
         self.screenLocation = screenLocation
-        self.mapLocattion = mapLocation
+        self.mapLocation = mapLocation
 
     def to_Serial(self):
         # Convert Detection properties to serialized binary format
         data = struct.pack('<iff', self.classID, self.probability, self.depth)
         data += self.screenLocation.to_Serial()
-        data += self.mapLocattion.to_Serial()
+        data += self.mapLocation.to_Serial()
         return data
     
     def to_JSON(self):
@@ -64,7 +64,7 @@ class Detection:
         outData['prob'] = self.probability
         outData['depth'] = self.depth
         outData['screenLocation'] = self.screenLocation.to_JSON()
-        outData['mapLocation'] = self.mapLocattion.to_JSON()
+        outData['mapLocation'] = self.mapLocation.to_JSON()
         return outData
 
 
