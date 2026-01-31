@@ -105,13 +105,5 @@ class MapPosition:
         mapLocation[1] += rotatedCameraOffset[1]
         mapLocation[2] += rotatedCameraOffset[2]  # Add Z offset since the camera is higher than the center of the robot
         
-        # self.debug_print(mapLocation) # Uncomment to debug
-        # Access scalar values from (3,1) numpy array for printing
-        print(f"DEBUG: Pos: ({position.x:.2f}, {position.y:.2f}) Az: {position.azimuth:.1f} -> Obj: ({float(mapLocation[0]):.2f}, {float(mapLocation[1]):.2f})")
-
         return mapLocation
-
-    # Debug helper (remove after verification)
-    def debug_print(self, mapLoc):
-        print(f"DEBUG: MapLocation calc: [{float(mapLoc[0]):.2f}, {float(mapLoc[1]):.2f}, {float(mapLoc[2]):.2f}]")
 
