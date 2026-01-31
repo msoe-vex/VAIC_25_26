@@ -281,6 +281,8 @@ class PushbackHandler:
         send_header = "RUN_ACTION"
         send_body = str(action) + "\n" + "\n".join(split_actions)
         self._write(send_header, send_body)
+
+        print(f"[DEBUG] Sent action {action} with commands: {split_actions}")
     
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
@@ -484,6 +486,9 @@ class MainApp:
                 
                 # Update observation with detected block positions
                 self.pushback_handler.handle_detections(aiRecord.detections)
+
+                # For testing
+                self.pushback_handler.handle("START", "60")
                 
                 self.set_v5(aiRecord)
                 self.rendering.set_images(output, depth_map)
