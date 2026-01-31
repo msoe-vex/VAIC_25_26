@@ -377,6 +377,9 @@ class PushbackHandler:
             # Get map position
             x = det.mapLocattion.x
             y = det.mapLocattion.y
+
+            if np.isnan(x) or np.isnan(y):
+                continue
             
             # Calculate distance from robot for sorting
             dist = np.sqrt((x - robot_x)**2 + (y - robot_y)**2)
@@ -406,8 +409,8 @@ class PushbackHandler:
         for i in range(self.MAX_TRACKED_BLOCKS):
             idx = ObsIndex.FRIENDLY_BLOCKS_START + i * 2
             if i < len(friendly_blocks):
-                self._observation[idx] = friendly_blocks[i][1]      # x
-                self._observation[idx + 1] = friendly_blocks[i][2]  # y
+                self._observation[idx] = float(friendly_blocks[i][1])      # x
+                self._observation[idx + 1] = float(friendly_blocks[i][2])  # y
             else:
                 # Sentinel value for empty slots
                 self._observation[idx] = -999.0
@@ -417,8 +420,8 @@ class PushbackHandler:
         for i in range(self.MAX_TRACKED_BLOCKS):
             idx = ObsIndex.OPPONENT_BLOCKS_START + i * 2
             if i < len(opponent_blocks):
-                self._observation[idx] = opponent_blocks[i][1]      # x
-                self._observation[idx + 1] = opponent_blocks[i][2]  # y
+                self._observation[idx] = float(opponent_blocks[i][1])      # x
+                self._observation[idx + 1] = float(opponent_blocks[i][2])  # y
             else:
                 # Sentinel value for empty slots
                 self._observation[idx] = -999.0
