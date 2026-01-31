@@ -473,7 +473,7 @@ class MainApp:
 
         self.v5 = V5SerialComms(handler=self.pushback_handler)
 
-        self.pushback_handler.set_write_func(self.v5.__write)
+        self.pushback_handler.set_write_func(self.v5.write)
 
         time.sleep(1)
         print("Initialized", flush=True)

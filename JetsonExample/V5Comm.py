@@ -163,7 +163,7 @@ class V5SerialComms:
         self.__thread.daemon = True
         self.__thread.start()
 
-    def __write(self, header: str, body: str):
+    def write(self, header: str, body: str):
         # Write data to the serial port in the format "#header|body\n"
         if(self.__ser != None and self.__ser.isOpen()):
             line = f"#{header}|{body}\n"
@@ -224,7 +224,7 @@ class V5SerialComms:
                     header, body = self.__read()
 
                     # # send a line that the C++ parser will recognize: "#header|body\n"
-                    # self.__write("test", "message")
+                    # self.write("test", "message")
 
                     # Delegate message handling to the callback handler
                     if self.__handler:
