@@ -408,7 +408,8 @@ class PushbackHandler:
         robot_y = self._observation[ObsIndex.SELF_POS_Y]
         
         def clamp(value, min_value, max_value):
-            return value # testing
+            if np.isnan(value):
+                return value # keep NaN as is
             return max(min_value, min(value, max_value))
 
         for det in detections:
