@@ -300,22 +300,39 @@ class PushbackHandler:
             if len(parts) < 17:
                 raise ValueError("Expected 17 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient, cam_x, cam_y, cam_z, cam_heading, cam_elevation, gps_x, gps_y, gps_z, gps_heading")
             name = parts[0].strip()
+            print(f"[DEBUG] Initializing model for robot '{name}'", flush=True)
             team = Team(parts[1].strip().lower())
+            print(f"[DEBUG] Team set to '{team.name}'", flush=True)
             size = RobotSize(int(parts[2].strip()))
+            print(f"[DEBUG] Robot size set to '{size.name}'", flush=True)
             length = float(parts[3].strip())
+            print(f"[DEBUG] Robot length set to '{length}'", flush=True)
             width = float(parts[4].strip())
+            print(f"[DEBUG] Robot width set to '{width}'", flush=True)
             start_x = float(parts[5].strip())
+            print(f"[DEBUG] Robot start_x set to '{start_x}'", flush=True)
             start_y = float(parts[6].strip())
+            print(f"[DEBUG] Robot start_y set to '{start_y}'", flush=True)
             start_orient = float(parts[7].strip())
+            print(f"[DEBUG] Robot start_orientation set to '{start_orient}'", flush=True)
             cam_x = float(parts[8].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset x set to '{cam_x}' meters", flush=True)
             cam_y = float(parts[9].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset y set to '{cam_y}' meters", flush=True)
             cam_z = float(parts[10].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset z set to '{cam_z}' meters", flush=True)
             cam_heading = float(parts[11].strip())
+            print(f"[DEBUG] Camera heading offset set to '{cam_heading}' degrees", flush=True)
             cam_elevation = float(parts[12].strip())
+            print(f"[DEBUG] Camera elevation offset set to '{cam_elevation}' degrees", flush=True)
             gps_x = float(parts[13].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset x set to '{gps_x}' meters", flush=True)
             gps_y = float(parts[14].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset y set to '{gps_y}' meters", flush=True)
             gps_z = float(parts[15].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset z set to '{gps_z}' meters", flush=True)
             gps_heading = float(parts[16].strip())
+            print(f"[DEBUG] GPS heading offset set to '{gps_heading}' degrees", flush=True)
 
             self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
             self._update_gps(GPSOffset(gps_x, gps_y, gps_z, "meters", gps_heading))
