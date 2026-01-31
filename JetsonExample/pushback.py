@@ -489,7 +489,7 @@ class MainApp:
         self.rendering = Rendering(self.v5Web)
 
         # Create the pushback handler for VEXAIRL model management
-        self.pushback_handler = PushbackHandler(None, self.v5Map.updateOffset, self.v5Pos.updateOffset)
+        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset)
 
         self.v5 = V5SerialComms(handler=self.pushback_handler)
 
