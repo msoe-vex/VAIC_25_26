@@ -408,6 +408,7 @@ class PushbackHandler:
         robot_y = self._observation[ObsIndex.SELF_POS_Y]
         
         def clamp(value, min_value, max_value):
+            return value # testing
             return max(min_value, min(value, max_value))
 
         for det in detections:
