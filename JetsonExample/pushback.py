@@ -297,8 +297,8 @@ class PushbackHandler:
         
         if rec_header_upper == "INIT":
             parts = rec_body.split(',')
-            if len(parts) < 16:
-                raise ValueError("Expected 16 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient, cam_x, cam_y, cam_z, cam_heading, cam_elevation, gps_x, gps_y, gps_heading")
+            if len(parts) < 17:
+                raise ValueError("Expected 17 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient, cam_x, cam_y, cam_z, cam_heading, cam_elevation, gps_x, gps_y, gps_z, gps_heading")
             name = parts[0].strip()
             team = Team(parts[1].strip().lower())
             size = RobotSize(int(parts[2].strip()))
@@ -314,10 +314,11 @@ class PushbackHandler:
             cam_elevation = float(parts[12].strip())
             gps_x = float(parts[13].strip())*INCHES_TO_METERS
             gps_y = float(parts[14].strip())*INCHES_TO_METERS
-            gps_heading = float(parts[15].strip())
+            gps_z = float(parts[15].strip())*INCHES_TO_METERS
+            gps_heading = float(parts[16].strip())
 
             self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
-            self._update_gps(GPSOffset(gps_x, gps_y, "meters", gps_heading))
+            self._update_gps(GPSOffset(gps_x, gps_y, gps_z, "meters", gps_heading))
 
             self._team = team  # Store team for block classification
 
