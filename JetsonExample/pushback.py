@@ -296,7 +296,7 @@ class PushbackHandler:
                 raise ValueError("Expected 8 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient")
             name = parts[0].strip()
             team = Team(parts[1].strip().lower())
-            size = RobotSize(parts[2].strip())
+            size = RobotSize(int(parts[2].strip()))
             length = float(parts[3].strip())
             width = float(parts[4].strip())
             start_x = float(parts[5].strip())
