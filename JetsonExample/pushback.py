@@ -457,8 +457,6 @@ class MainApp:
         self.camera = Camera()
         self.camera.start()
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
-
-        self.v5 = V5SerialComms(handler=self.pushback_handler)
         
         self.v5Map = MapPosition()
         self.v5Pos = V5GPS()
@@ -468,6 +466,8 @@ class MainApp:
 
         # Create the pushback handler for VEXAIRL model management
         self.pushback_handler = PushbackHandler(self.v5._V5SerialComms__write, self.v5Map.updateOffset, self.v5Pos.updateOffset)
+
+        self.v5 = V5SerialComms(handler=self.pushback_handler)
 
         time.sleep(1)
         print("Initialized", flush=True)
