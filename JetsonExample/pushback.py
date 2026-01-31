@@ -261,6 +261,10 @@ class PushbackHandler:
         self._update_camera = update_camera_func
         self._update_gps = update_gps_func
         
+    def set_write_func(self, write_func):
+        """Set the write callback after construction."""
+        self._write = write_func
+        
     @property
     def observation(self):
         return self._observation
@@ -465,9 +469,11 @@ class MainApp:
         self.rendering = Rendering(self.v5Web)
 
         # Create the pushback handler for VEXAIRL model management
-        self.pushback_handler = PushbackHandler(self.v5._V5SerialComms__write, self.v5Map.updateOffset, self.v5Pos.updateOffset)
+        self.pushback_handler = PushbackHandler(None, self.v5Map.updateOffset, self.v5Pos.updateOffset)
 
         self.v5 = V5SerialComms(handler=self.pushback_handler)
+
+        self.pushback_handler.set_write_func(self.v5.__write)
 
         time.sleep(1)
         print("Initialized", flush=True)
