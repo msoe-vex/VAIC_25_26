@@ -270,6 +270,7 @@ class PushbackHandler:
 
     def _send_action(self):
         if self._model_runner is None or self._write is None:
+            print("[DEBUG] Model runner or write function not initialized, cannot send action.", flush=True)
             return
 
         # Update time remaining
@@ -277,6 +278,7 @@ class PushbackHandler:
             self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
 
         action, split_actions = self._model_runner.get_inference(self._observation)
+        print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
         # Format: action_id\ncommand1\ncommand2\n...
         send_header = "RUN_ACTION"
         send_body = str(action) + "\n" + "\n".join(split_actions)
@@ -328,6 +330,7 @@ class PushbackHandler:
             self._send_action()
             
         elif rec_header_upper == "START":
+            print("[DEBUG] Received START command", flush=True)
             self._start_time = time.time()
             self._total_time = float(rec_body)
             self._send_action()
