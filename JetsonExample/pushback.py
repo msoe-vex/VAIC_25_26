@@ -251,7 +251,7 @@ class PushbackHandler:
     
     MAX_TRACKED_BLOCKS = 15
     
-    def __init__(self, write_func=None, update_camera_func=None, update_gps_func=None):
+    def __init__(self, write_func, update_camera_func, update_gps_func):
         self._model_runner: VexModelRunner = None
         self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
         self._write = write_func
@@ -260,10 +260,6 @@ class PushbackHandler:
         self._total_time: float = None
         self._update_camera = update_camera_func
         self._update_gps = update_gps_func
-        
-    def set_write_func(self, write_func):
-        """Set the write callback after construction."""
-        self._write = write_func
         
     @property
     def observation(self):
@@ -462,18 +458,16 @@ class MainApp:
         self.camera.start()
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
 
-        # Create the pushback handler for VEXAIRL model management
-        self.pushback_handler = PushbackHandler()
-
         self.v5 = V5SerialComms(handler=self.pushback_handler)
         
-        # Wire up the write callback so handler can send messages back
-        self.pushback_handler.set_write_func(self.v5._V5SerialComms__write)
         self.v5Map = MapPosition()
         self.v5Pos = V5GPS()
         self.v5Web = V5WebData(self.v5Map, self.v5Pos, self.processing)
         self.stats = Statistics(0, 0, 0, 640, 480, 0, False)
         self.rendering = Rendering(self.v5Web)
+
+        # Create the pushback handler for VEXAIRL model management
+        self.pushback_handler = PushbackHandler(self.v5._V5SerialComms__write, self.v5Map.updateOffset, self.v5Pos.updateOffset)
 
         time.sleep(1)
         print("Initialized", flush=True)
