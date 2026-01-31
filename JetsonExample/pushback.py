@@ -318,7 +318,7 @@ class PushbackHandler:
             
             current_folder_path = os.path.dirname(os.path.abspath(__file__))
             self._model_runner = VexModelRunner(
-                model_path=os.path.join(current_folder_path, "models", name),
+                model_path=os.path.join(current_folder_path, "models", name+".pt"),
                 game=game,
             )
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
