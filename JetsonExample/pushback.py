@@ -489,6 +489,7 @@ class MainApp:
 
                 # For testing
                 self.pushback_handler.handle("START", "60")
+                print("[DEBUG] Detections processed and observation updated.", flush=True)
                 
                 self.set_v5(aiRecord)
                 self.rendering.set_images(output, depth_map)
