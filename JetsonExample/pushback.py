@@ -316,8 +316,9 @@ class PushbackHandler:
             )
             game = VexAISkillsGame(robots=[robot])
             
+            current_folder_path = os.path.dirname(os.path.abspath(__file__))
             self._model_runner = VexModelRunner(
-                model_path="./models/" + name,
+                model_path=os.path.join(current_folder_path, "models", name),
                 game=game,
             )
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
