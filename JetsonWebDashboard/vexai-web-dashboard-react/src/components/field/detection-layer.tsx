@@ -39,22 +39,30 @@ const DetectionLayer = ({ fieldWidth, fieldHeight }: DetectionLayerProps) => {
       {detections ? (
         <>
           {detections.map((detection) => {
-            const elementConfig = config.elements.size[detection.class];
-            if (!elementConfig || !detection?.mapLocation) {
+            if (!detection || typeof detection.class !== "number") {
               return null;
             }
+            const elementConfig = config.elements.size[detection.class];
+            if (!elementConfig || !detection.mapLocation) {
+              return null;
+            }
+            const mapX = detection.mapLocation.x?.[0];
+            const mapY = detection.mapLocation.y?.[0];
+            if (mapX === undefined || mapY === undefined) {
+              return null;
+            }
+
             const widthScale = scale * elementConfig.width * elementConfig.scale;
             const heightScale = scale * elementConfig.height * elementConfig.scale;
             return (
               <>
                 {detection.depth !== -1 ? (
                   <Image
-                    key={`${config.elements.label.text[detection.class]
-                      }-${uuidv4()}`}
+                    key={`${uuidv4()}`}
                     alt=""
                     image={getImage(detection.class)}
-                    x={detection.mapLocation.x[0] * scale}
-                    y={detection.mapLocation.y[0] * scale * -1}
+                    x={mapX * scale}
+                    y={mapY * scale * -1}
                     z={detection.depth}
                     width={widthScale}
                     height={heightScale}
