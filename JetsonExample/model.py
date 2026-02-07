@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from PIL import ImageDraw
-from data_processing import PreprocessYOLO, PostprocessYOLO, ALL_CATEGORIES
+from data_processing import PreprocessYOLO, ALL_CATEGORIES
 from model_backend import CUDABackend, CoralBackend, USE_CUDA, USE_CORAL
 
 
@@ -24,57 +24,35 @@ class Model:
         # Perform inference on the given image and return the bounding boxes, scores, and classes of detected objects.
 
         # Define input resolution and create preprocessor
-        input_resolution_yolov3_HW = (320, 320)
+        input_resolution_yolov3_HW = (640, 640)
         preprocessor = PreprocessYOLO(input_resolution_yolov3_HW)
 
         # Process the image and get original shape
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
-        shape_orig_WH = image_raw.size
-
-        # Define output shapes for post-processing
-        output_shapes = [(1, 10, 10, 21), (1, 20, 20, 21)]
-
         # Set the input and perform inference
         outputs = self.backend.inference(image)
 
-        # Sort tensors from smallest to largest
-        outputs = sorted(outputs, key=lambda o: o.size)
+        # Expected single output: (1, 300, 6) => [x1, y1, x2, y2, conf, class]
+        output = outputs[0].reshape((1, 300, 6))[0]
 
-        # Reshape the outputs for post-processing
-        outputs = [output.reshape(shape) for output, shape in zip(outputs, output_shapes)]
-
-        # Define arguments for post-processing
-        postprocessor_args = {
-            "yolo_masks": [(3, 4, 5), (0, 1, 2)],
-            "yolo_anchors": [
-            (10, 14),
-            (23, 27),
-            (37, 58),
-            (81, 82),
-            (135, 169),
-            (344, 319),
-            ],
-            "obj_threshold": [0.25, 0.25],  # Very low threshold for debugging
-            "nms_threshold": 0.5,
-            "yolo_input_resolution": input_resolution_yolov3_HW,
-        }
-
-        # Perform post-processing
-        postprocessor = PostprocessYOLO(**postprocessor_args)
-        
-        # Debug: Check raw model output values BEFORE postprocessing
-        for i, out in enumerate(outputs):
-            obj_channel = out[..., 4]  # Objectness scores are at index 4
-            # Apply sigmoid to get actual confidence
-            obj_sigmoid = 1.0 / (1.0 + np.exp(-obj_channel))
-        
-        boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
+        boxes = output[:, 0:4]
+        scores = output[:, 4]
+        classes = output[:, 5].astype(int)
 
         Detections = []
 
         # Handle case with no detections
         if boxes is None or classes is None or scores is None:
             #print("No objects were detected.")
+            return inputImage, Detections
+
+        # Filter invalid and low-confidence boxes before drawing
+        valid = scores > 0.0
+        if np.any(valid):
+            boxes = boxes[valid]
+            scores = scores[valid]
+            classes = classes[valid]
+        else:
             return inputImage, Detections
 
         # Draw bounding boxes and return detected objects
@@ -90,18 +68,21 @@ class Model:
 
         # Draw each bounding box
         for box, score, category in zip(bboxes, confidences, categories):
-            x_coord, y_coord, width, height = box
-            left = max(0, np.floor(x_coord + 0.5).astype(int))
-            top = max(0, np.floor(y_coord + 0.5).astype(int))
-            right = min(image_raw.width, np.floor(x_coord + width + 0.5).astype(int))
-            bottom = min(image_raw.height, np.floor(y_coord + height + 0.5).astype(int))
+            x1, y1, x2, y2 = box
+            left = max(0, np.floor(x1 + 0.5).astype(int))
+            top = max(0, np.floor(y1 + 0.5).astype(int))
+            right = min(image_raw.width, np.floor(x2 + 0.5).astype(int))
+            bottom = min(image_raw.height, np.floor(y2 + 0.5).astype(int))
+
+            width = max(0, right - left)
+            height = max(0, bottom - top)
 
             # Draw the rectangle and text
             # draw.rectangle(((left, top), (right, bottom)), outline=bbox_color)
             # draw.text((left, top - 12), "{0} {1:.2f}".format(all_categories[category], score), fill=bbox_color)
 
             # Create and store the raw detection object
-            raw_detection = rawDetection(int(left), int(top), [x_coord, y_coord], int(width), int(height), score,
+            raw_detection = rawDetection(int(left), int(top), [x1, y1], int(width), int(height), score,
                                          category)
             Detections.append(raw_detection)
 
