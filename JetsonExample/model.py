@@ -29,6 +29,11 @@ class Model:
             return self.backend.input_resolution
         return (320, 320)
 
+    def _resolve_input_layout(self):
+        if self.backend is not None and hasattr(self.backend, "input_layout"):
+            return self.backend.input_layout
+        return "NHWC"
+
     def _infer_output_shapes(self, outputs):
         channel_size = 3 * (5 + self._num_classes)
         output_shapes = []
@@ -66,6 +71,8 @@ class Model:
 
         # Process the image and get original shape
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
+        if self._resolve_input_layout() == "NCHW":
+            image = np.transpose(image, [0, 3, 1, 2])
         shape_orig_WH = image_raw.size
 
         # Set the input and perform inference

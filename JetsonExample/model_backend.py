@@ -72,11 +72,20 @@ class CUDABackend(ModelBackend):
                     input_tensor.shape = input_shape
                 else:
                     has_dynamic = any(dim <= 0 for dim in input_tensor.shape)
+                    shape = list(input_tensor.shape)
+
+                    # If dynamic or NHWC-like, force a safe NCHW shape for TRT
                     if has_dynamic:
-                        input_tensor.shape = [1, 416, 416, 3]
+                        input_tensor.shape = [1, 3, 416, 416]
+                    elif len(shape) == 4 and shape[-1] == 3 and shape[1] != 3:
+                        # Likely NHWC provided; TRT expects NCHW
+                        input_tensor.shape = [1, 3, shape[1], shape[2]]
 
                 # Build and serialize the network, then create and return the engine
                 plan = builder.build_serialized_network(network, config)
+                if plan is None:
+                    print("ERROR: Failed to build TensorRT engine.")
+                    return None
                 engine = runtime.deserialize_cuda_engine(plan)
                 with open(engine_file_path, "wb") as f:
                     f.write(plan)
@@ -86,8 +95,7 @@ class CUDABackend(ModelBackend):
         if os.path.exists(engine_file_path):
             with open(engine_file_path, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
                 return runtime.deserialize_cuda_engine(f.read())
-        else:
-            return build_engine()
+        return build_engine()
 
     def __init__(self):
         current_folder_path = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +104,8 @@ class CUDABackend(ModelBackend):
 
         # Get the TensorRT engine
         self.engine = CUDABackend.get_engine(onnx_file_path, engine_file_path)
+        if self.engine is None:
+            raise RuntimeError("Failed to build or load TensorRT engine.")
 
         # Create an execution context
         self.context = self.engine.create_execution_context()
@@ -104,9 +114,9 @@ class CUDABackend(ModelBackend):
         self.inputs, self.outputs, self.bindings, self.stream = cuda_common.allocate_buffers(self.engine)
 
         # Cache input resolution from the engine
-        self._input_resolution = self._resolve_input_resolution()
+        self._input_resolution, self._input_layout = self._resolve_input_details()
 
-    def _resolve_input_resolution(self):
+    def _resolve_input_details(self):
         input_shape = None
         for binding in self.engine:
             if self.engine.get_tensor_mode(binding) == trt.TensorIOMode.INPUT:
@@ -114,22 +124,24 @@ class CUDABackend(ModelBackend):
                 break
 
         if input_shape is None:
-            return (320, 320)
+            return (320, 320), "NHWC"
 
         shape = list(input_shape)
         if len(shape) != 4:
-            return (320, 320)
+            return (320, 320), "NHWC"
 
         # Accept NHWC or NCHW. Find the two spatial dims.
         if shape[1] == 3:
             height, width = shape[2], shape[3]
+            layout = "NCHW"
         else:
             height, width = shape[1], shape[2]
+            layout = "NHWC"
 
         if height <= 0 or width <= 0:
-            return (320, 320)
+            return (320, 320), layout
 
-        return (int(height), int(width))
+        return (int(height), int(width)), layout
 
     def inference(self, image):
         self.inputs[0].host = image
@@ -145,6 +157,10 @@ class CUDABackend(ModelBackend):
     @property
     def input_resolution(self):
         return self._input_resolution
+
+    @property
+    def input_layout(self):
+        return self._input_layout
     
 class CoralBackend(ModelBackend):
     
@@ -160,22 +176,24 @@ class CoralBackend(ModelBackend):
         self.interpreter = make_interpreter(tflite_file_path)
       
         self.interpreter.allocate_tensors()
-        self._input_resolution = self._resolve_input_resolution()
+        self._input_resolution, self._input_layout = self._resolve_input_details()
 
-    def _resolve_input_resolution(self):
+    def _resolve_input_details(self):
         details = self.interpreter.get_input_details()
         if not details:
-            return (320, 320)
+            return (320, 320), "NHWC"
         shape = list(details[0]["shape"])
         if len(shape) != 4:
-            return (320, 320)
+            return (320, 320), "NHWC"
         if shape[1] == 3:
             height, width = shape[2], shape[3]
+            layout = "NCHW"
         else:
             height, width = shape[1], shape[2]
+            layout = "NHWC"
         if height <= 0 or width <= 0:
-            return (320, 320)
-        return (int(height), int(width))
+            return (320, 320), layout
+        return (int(height), int(width)), layout
 
     def inference(self, image):
         coral_common.set_input(self.interpreter, image)
@@ -206,3 +224,7 @@ class CoralBackend(ModelBackend):
     @property
     def input_resolution(self):
         return self._input_resolution
+
+    @property
+    def input_layout(self):
+        return self._input_layout
