@@ -115,6 +115,7 @@ class CUDABackend(ModelBackend):
 
         # Cache input resolution from the engine
         self._input_resolution, self._input_layout = self._resolve_input_details()
+        self._output_shapes = self._resolve_output_shapes()
 
     def _resolve_input_details(self):
         input_shape = None
@@ -143,6 +144,13 @@ class CUDABackend(ModelBackend):
 
         return (int(height), int(width)), layout
 
+    def _resolve_output_shapes(self):
+        output_shapes = []
+        for binding in self.engine:
+            if self.engine.get_tensor_mode(binding) == trt.TensorIOMode.OUTPUT:
+                output_shapes.append(tuple(self.engine.get_tensor_shape(binding)))
+        return output_shapes
+
     def inference(self, image):
         self.inputs[0].host = image
         trt_outputs = cuda_common.do_inference_v3(self.context, bindings=self.bindings, inputs=self.inputs,
@@ -161,6 +169,10 @@ class CUDABackend(ModelBackend):
     @property
     def input_layout(self):
         return self._input_layout
+
+    @property
+    def output_shapes(self):
+        return self._output_shapes
     
 class CoralBackend(ModelBackend):
     
@@ -177,6 +189,7 @@ class CoralBackend(ModelBackend):
       
         self.interpreter.allocate_tensors()
         self._input_resolution, self._input_layout = self._resolve_input_details()
+        self._output_shapes = self._resolve_output_shapes()
 
     def _resolve_input_details(self):
         details = self.interpreter.get_input_details()
@@ -194,6 +207,10 @@ class CoralBackend(ModelBackend):
         if height <= 0 or width <= 0:
             return (320, 320), layout
         return (int(height), int(width)), layout
+
+    def _resolve_output_shapes(self):
+        details = self.interpreter.get_output_details()
+        return [tuple(d["shape"]) for d in details]
 
     def inference(self, image):
         coral_common.set_input(self.interpreter, image)
@@ -228,3 +245,7 @@ class CoralBackend(ModelBackend):
     @property
     def input_layout(self):
         return self._input_layout
+
+    @property
+    def output_shapes(self):
+        return self._output_shapes

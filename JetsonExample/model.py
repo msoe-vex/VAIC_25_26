@@ -47,6 +47,21 @@ class Model:
             output_shapes.append((1, grid, grid, channel_size))
         return output_shapes
 
+    def _backend_output_shapes(self):
+        if self.backend is not None and hasattr(self.backend, "output_shapes"):
+            shapes = [tuple(s) for s in self.backend.output_shapes]
+            shapes = [s for s in shapes if len(s) == 4]
+            if shapes:
+                shapes.sort(key=lambda s: np.prod(s))
+                return shapes
+        return []
+
+    def _to_nhwc(self, output):
+        channel_size = 3 * (5 + self._num_classes)
+        if output.ndim == 4 and output.shape[1] == channel_size and output.shape[-1] != channel_size:
+            return np.transpose(output, [0, 2, 3, 1])
+        return output
+
     def _scaled_anchors(self, input_resolution):
         base_anchors = [
             (10, 14),
@@ -86,9 +101,12 @@ class Model:
         # Reshape the outputs for post-processing
         output_shapes = self._infer_output_shapes(outputs)
         if len(output_shapes) != len(outputs):
+            output_shapes = self._backend_output_shapes()
+        if len(output_shapes) != len(outputs):
             print("[WARN] Unexpected output sizes; skipping detections.")
             return inputImage, []
         outputs = [output.reshape(shape) for output, shape in zip(outputs, output_shapes)]
+        outputs = [self._to_nhwc(output) for output in outputs]
 
         # Define arguments for post-processing
         postprocessor_args = {
