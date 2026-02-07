@@ -107,23 +107,26 @@ const Camera = ({ img, detections }: CameraProps) => {
               {sorted ? (
                 <>
                   {sorted.map((detection) => {
-                    const widthRatio =
-                      img.width / (ref.current ? ref.current["clientWidth"] : 1);
-                    const heightRatio =
-                      img.height /
-                      (ref.current ? ref.current["clientHeight"] : 1);
+                    if (!detection?.screenLocation) {
+                      return null;
+                    }
+
+                    const clientWidth = ref.current ? ref.current["clientWidth"] : 1;
+                    const clientHeight = ref.current ? ref.current["clientHeight"] : 1;
+                    const imgWidth = img?.width ?? clientWidth;
+                    const imgHeight = img?.height ?? clientHeight;
+                    const widthRatio = imgWidth / clientWidth;
+                    const heightRatio = imgHeight / clientHeight;
 
                     const bboxWidth = detection.screenLocation.width / widthRatio;
                     const bboxHeight =
                       detection.screenLocation.height / heightRatio;
 
                     const bboxX =
-                      (detection.screenLocation.x *
-                        (ref.current ? ref.current["clientWidth"] : 1)) /
+                      (detection.screenLocation.x * clientWidth) /
                       config.SCALE_X;
                     const bboxY =
-                      (detection.screenLocation.y *
-                        (ref.current ? ref.current["clientHeight"] : 1)) /
+                      (detection.screenLocation.y * clientHeight) /
                       config.SCALE_Y;
 
                     const classBoxWidth = bboxWidth;
