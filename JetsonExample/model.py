@@ -114,6 +114,11 @@ class Model:
         # Sort tensors from smallest to largest
         outputs = sorted(outputs, key=lambda o: o.size)
 
+        # Fallback: handle single-output models that already include NMS
+        if len(outputs) == 1 and outputs[0].size % 6 == 0:
+            detections = self._postprocess_nms_output(outputs[0], shape_orig_WH)
+            return np.array(image_raw), detections
+
         # Reshape the outputs for post-processing
         output_shapes = self._infer_output_shapes(outputs)
         if len(output_shapes) != len(outputs):
@@ -157,6 +162,64 @@ class Model:
         # Draw bounding boxes and return detected objects
         obj_detected_img = Model.draw_bboxes(image_raw, boxes, scores, classes, ALL_CATEGORIES, Detections)
         return np.array(obj_detected_img), Detections
+
+    def _postprocess_nms_output(self, output, shape_orig_WH, conf_threshold=0.25):
+        width, height = shape_orig_WH
+        if output.ndim == 1:
+            dets = output.reshape(-1, 6)
+        elif output.ndim == 2 and output.shape[1] == 6:
+            dets = output
+        elif output.ndim == 3 and output.shape[-1] == 6:
+            dets = output.reshape(-1, 6)
+        else:
+            return []
+
+        Detections = []
+
+        max_val = np.max(dets[:, :4]) if dets.size else 0
+        normalized = max_val <= 1.5
+
+        for row in dets:
+            x1, y1, x2, y2, conf, cls = row
+            if conf < conf_threshold:
+                continue
+
+            # If coordinates look like xywh (center format), convert to xyxy
+            if x2 < x1 or y2 < y1:
+                x, y, w, h = x1, y1, x2, y2
+                x1 = x - w / 2
+                y1 = y - h / 2
+                x2 = x + w / 2
+                y2 = y + h / 2
+
+            if normalized:
+                x1 *= width
+                x2 *= width
+                y1 *= height
+                y2 *= height
+
+            x1 = max(0, min(width, x1))
+            x2 = max(0, min(width, x2))
+            y1 = max(0, min(height, y1))
+            y2 = max(0, min(height, y2))
+
+            w = max(0, x2 - x1)
+            h = max(0, y2 - y1)
+            if w == 0 or h == 0:
+                continue
+
+            raw_detection = rawDetection(
+                int(x1),
+                int(y1),
+                [float((x1 + x2) / 2), float((y1 + y2) / 2)],
+                int(w),
+                int(h),
+                float(conf),
+                int(cls),
+            )
+            Detections.append(raw_detection)
+
+        return Detections
 
     @staticmethod
     def draw_bboxes(image_raw, bboxes, confidences, categories, all_categories, Detections, bbox_color="white"):
