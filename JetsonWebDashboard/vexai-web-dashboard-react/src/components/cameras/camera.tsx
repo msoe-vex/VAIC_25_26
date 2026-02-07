@@ -111,6 +111,14 @@ const Camera = ({ img, detections }: CameraProps) => {
                       return null;
                     }
 
+                    if (
+                      config.elements.label.text[detection.class] === undefined ||
+                      config.elements.backgroundColors[detection.class] === undefined ||
+                      config.elements.borderColors[detection.class] === undefined
+                    ) {
+                      return null;
+                    }
+
                     const clientWidth = ref.current ? ref.current["clientWidth"] : 1;
                     const clientHeight = ref.current ? ref.current["clientHeight"] : 1;
                     const imgWidth = img?.width ?? clientWidth;

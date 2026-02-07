@@ -39,8 +39,12 @@ const DetectionLayer = ({ fieldWidth, fieldHeight }: DetectionLayerProps) => {
       {detections ? (
         <>
           {detections.map((detection) => {
-            const widthScale = scale * config.elements.size[detection.class].width * config.elements.size[detection.class].scale;
-            const heightScale = scale * config.elements.size[detection.class].height * config.elements.size[detection.class].scale;
+            const elementConfig = config.elements.size[detection.class];
+            if (!elementConfig || !detection?.mapLocation) {
+              return null;
+            }
+            const widthScale = scale * elementConfig.width * elementConfig.scale;
+            const heightScale = scale * elementConfig.height * elementConfig.scale;
             return (
               <>
                 {detection.depth !== -1 ? (
