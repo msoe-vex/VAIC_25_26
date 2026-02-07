@@ -56,6 +56,22 @@ class Model:
                 return shapes
         return []
 
+    def _resolve_shape(self, output, shape):
+        if output.ndim == 4:
+            return output.shape
+        shape = list(shape)
+        if -1 in shape:
+            known = 1
+            unknown_count = 0
+            for dim in shape:
+                if dim == -1:
+                    unknown_count += 1
+                else:
+                    known *= dim
+            if unknown_count == 1 and known > 0:
+                shape[shape.index(-1)] = int(output.size // known)
+        return tuple(shape)
+
     def _to_nhwc(self, output):
         channel_size = 3 * (5 + self._num_classes)
         if output.ndim == 4 and output.shape[1] == channel_size and output.shape[-1] != channel_size:
@@ -103,9 +119,12 @@ class Model:
         if len(output_shapes) != len(outputs):
             output_shapes = self._backend_output_shapes()
         if len(output_shapes) != len(outputs):
-            print("[WARN] Unexpected output sizes; skipping detections.")
+            output_sizes = [int(o.size) for o in outputs]
+            backend_shapes = self._backend_output_shapes()
+            print(f"[WARN] Unexpected output sizes; skipping detections. sizes={output_sizes}, backend_shapes={backend_shapes}")
             return inputImage, []
-        outputs = [output.reshape(shape) for output, shape in zip(outputs, output_shapes)]
+        resolved_shapes = [self._resolve_shape(output, shape) for output, shape in zip(outputs, output_shapes)]
+        outputs = [output.reshape(shape) for output, shape in zip(outputs, resolved_shapes)]
         outputs = [self._to_nhwc(output) for output in outputs]
 
         # Define arguments for post-processing
