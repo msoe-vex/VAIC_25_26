@@ -4,7 +4,6 @@ import ConnectingToCameraProgress from "./connecting-to-camera-progress";
 import { Detection, Image } from "../../lib/data-response";
 import useWindowDimensions from "../../lib/hooks";
 import { Layer, Rect, Stage, Text } from "react-konva";
-import { v4 as uuidv4 } from "uuid";
 import { config } from "../../util/config";
 import { PhotoCamera } from "@mui/icons-material";
 import Konva from "konva";
@@ -106,7 +105,7 @@ const Camera = ({ img, detections }: CameraProps) => {
             >
               {sorted ? (
                 <>
-                  {sorted.map((detection) => {
+                  {sorted.map((detection, index) => {
                     if (!detection?.screenLocation) {
                       return null;
                     }
@@ -144,7 +143,7 @@ const Camera = ({ img, detections }: CameraProps) => {
                     return (
                       <>
                         {detection.depth ? ( // depth is -1 if received json detection had a depth of NaN originally
-                          <Layer key={uuidv4()}>
+                          <Layer key={`${detection.class}-${index}`}>
                             {/* class box */}
                             <Rect
                               x={bboxX}
