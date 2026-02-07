@@ -35,9 +35,14 @@ class Model:
         # Expected single output: (1, 300, 6) => [x1, y1, x2, y2, conf, class]
         output = outputs[0].reshape((1, 300, 6))[0]
 
+        # Debug: Check raw output format
+        print(f"[DEBUG] Raw output shape: {output.shape}, first 3 rows:\n{output[:3]}", flush=True)
+
         boxes = output[:, 0:4]
         scores = output[:, 4]
-        classes = output[:, 5].astype(int)
+        classes = np.clip(output[:, 5], 0, 1).astype(int)  # Clamp to valid class range [0, 1]
+        
+        print(f"[DEBUG] Unique class IDs: {np.unique(classes)}", flush=True)
 
         Detections = []
 
