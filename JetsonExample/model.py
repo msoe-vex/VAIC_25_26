@@ -73,6 +73,8 @@ class Model:
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
         if self._resolve_input_layout() == "NCHW":
             image = np.transpose(image, [0, 3, 1, 2])
+
+        image = np.ascontiguousarray(image)
         shape_orig_WH = image_raw.size
 
         # Set the input and perform inference
