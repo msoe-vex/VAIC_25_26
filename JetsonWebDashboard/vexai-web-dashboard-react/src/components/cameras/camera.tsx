@@ -76,7 +76,7 @@ const Camera = ({ img, detections }: CameraProps) => {
 
   return (
     <Box>
-      {img ? (
+      {img && img.data ? (
         <Box>
           <div
             style={{
@@ -106,7 +106,7 @@ const Camera = ({ img, detections }: CameraProps) => {
               {sorted ? (
                 <>
                   {sorted.map((detection, index) => {
-                    if (!detection?.screenLocation) {
+                    if (!detection?.screenLocation || !detection?.mapLocation) {
                       return null;
                     }
 
@@ -188,9 +188,9 @@ const Camera = ({ img, detections }: CameraProps) => {
                             {/* coordinates */}
                             <Text
                               fill={config.elements.label.textColors.white}
-                              text={`X ${detection.mapLocation.x[0]
+                              text={`X ${(detection.mapLocation.x?.[0] ?? 0)
                                 .toFixed(2)
-                                .toString()}m\nY ${detection.mapLocation.y[0]
+                                .toString()}m\nY ${(detection.mapLocation.y?.[0] ?? 0)
                                 .toFixed(2)
                                 .toString()}m`}
                               align="left"
