@@ -19,30 +19,138 @@ class Model:
             print("Using Coral Edge TPU for model inferencing")
         else:
             print("No backend found! Make sure you have CUDA or Coral installed based on your device")
+            self.backend = None
+
+        self._num_classes = len(ALL_CATEGORIES)
+        self._input_resolution = self._resolve_input_resolution()
+
+    def _resolve_input_resolution(self):
+        if self.backend is not None and hasattr(self.backend, "input_resolution"):
+            return self.backend.input_resolution
+        return (320, 320)
+
+    def _resolve_input_layout(self):
+        if self.backend is not None and hasattr(self.backend, "input_layout"):
+            return self.backend.input_layout
+        return "NHWC"
+
+    def _infer_output_shapes(self, outputs):
+        channel_size = 3 * (5 + self._num_classes)
+        output_shapes = []
+        for output in outputs:
+            size = output.size
+            if size % channel_size != 0:
+                continue
+            grid = int(round(np.sqrt(size / channel_size)))
+            if grid * grid * channel_size != size:
+                continue
+            output_shapes.append((1, grid, grid, channel_size))
+        return output_shapes
+
+    def _backend_output_shapes(self):
+        if self.backend is not None and hasattr(self.backend, "output_shapes"):
+            shapes = [tuple(s) for s in self.backend.output_shapes]
+            shapes = [s for s in shapes if len(s) == 4]
+            if shapes:
+                shapes.sort(key=lambda s: np.prod(s))
+                return shapes
+        return []
+
+    def _resolve_shape(self, output, shape):
+        if output.ndim == 4:
+            return output.shape
+        shape = list(shape)
+        if -1 in shape:
+            known = 1
+            unknown_count = 0
+            for dim in shape:
+                if dim == -1:
+                    unknown_count += 1
+                else:
+                    known *= dim
+            if unknown_count == 1 and known > 0:
+                shape[shape.index(-1)] = int(output.size // known)
+        return tuple(shape)
+
+    def _to_nhwc(self, output):
+        channel_size = 3 * (5 + self._num_classes)
+        if output.ndim == 4 and output.shape[1] == channel_size and output.shape[-1] != channel_size:
+            return np.transpose(output, [0, 2, 3, 1])
+        return output
+
+    def _scaled_anchors(self, input_resolution):
+        base_anchors = [
+            (10, 14),
+            (23, 27),
+            (37, 58),
+            (81, 82),
+            (135, 169),
+            (344, 319),
+        ]
+        scale = input_resolution[0] / 416.0
+        return [(a[0] * scale, a[1] * scale) for a in base_anchors]
 
     def inference(self, inputImage):
         # Perform inference on the given image and return the bounding boxes, scores, and classes of detected objects.
+        if self.backend is None:
+            print("No backend available for inference.")
+            return inputImage, []
 
         # Define input resolution and create preprocessor
-        input_resolution_yolov3_HW = (640, 640)
+        input_resolution_yolov3_HW = self._input_resolution
         preprocessor = PreprocessYOLO(input_resolution_yolov3_HW)
 
         # Process the image and get original shape
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
+        if self._resolve_input_layout() == "NCHW":
+            image = np.transpose(image, [0, 3, 1, 2])
+
+        image = np.ascontiguousarray(image)
+        shape_orig_WH = image_raw.size
+
         # Set the input and perform inference
         outputs = self.backend.inference(image)
 
         # Expected single output: (1, 300, 6) => [x1, y1, x2, y2, conf, class]
         output = outputs[0].reshape((1, 300, 6))[0]
 
-        # Debug: Check raw output format
-        print(f"[DEBUG] Raw output shape: {output.shape}, first 3 rows:\n{output[:3]}", flush=True)
+        # Fallback: handle single-output models that already include NMS
+        if len(outputs) == 1 and outputs[0].size % 6 == 0:
+            detections = self._postprocess_nms_output(outputs[0], shape_orig_WH)
+            return np.array(image_raw), detections
 
-        boxes = output[:, 0:4]
-        scores = output[:, 4]
-        classes = np.clip(output[:, 5], 0, 1).astype(int)  # Clamp to valid class range [0, 1]
+        # Reshape the outputs for post-processing
+        output_shapes = self._infer_output_shapes(outputs)
+        if len(output_shapes) != len(outputs):
+            output_shapes = self._backend_output_shapes()
+        if len(output_shapes) != len(outputs):
+            output_sizes = [int(o.size) for o in outputs]
+            backend_shapes = self._backend_output_shapes()
+            print(f"[WARN] Unexpected output sizes; skipping detections. sizes={output_sizes}, backend_shapes={backend_shapes}")
+            return inputImage, []
+        resolved_shapes = [self._resolve_shape(output, shape) for output, shape in zip(outputs, output_shapes)]
+        outputs = [output.reshape(shape) for output, shape in zip(outputs, resolved_shapes)]
+        outputs = [self._to_nhwc(output) for output in outputs]
+
+        # Define arguments for post-processing
+        postprocessor_args = {
+            "yolo_masks": [(3, 4, 5), (0, 1, 2)],
+            "yolo_anchors": self._scaled_anchors(input_resolution_yolov3_HW),
+            "obj_threshold": [0.25, 0.25],  # Very low threshold for debugging
+            "nms_threshold": 0.5,
+            "yolo_input_resolution": input_resolution_yolov3_HW,
+        }
+
+        # Perform post-processing
+        postprocessor = PostprocessYOLO(**postprocessor_args)
         
-        print(f"[DEBUG] Unique class IDs: {np.unique(classes)}", flush=True)
+        # Debug: Check raw model output values BEFORE postprocessing
+        for i, out in enumerate(outputs):
+            obj_channel = out[..., 4]  # Objectness scores are at index 4
+            # Apply sigmoid to get actual confidence
+            obj_sigmoid = 1.0 / (1.0 + np.exp(-obj_channel))
+        
+        boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
 
         Detections = []
 
@@ -64,6 +172,64 @@ class Model:
         # Draw bounding boxes and return detected objects
         obj_detected_img = Model.draw_bboxes(image_raw, boxes, scores, classes, ALL_CATEGORIES, Detections)
         return np.array(obj_detected_img), Detections
+
+    def _postprocess_nms_output(self, output, shape_orig_WH, conf_threshold=0.25):
+        width, height = shape_orig_WH
+        if output.ndim == 1:
+            dets = output.reshape(-1, 6)
+        elif output.ndim == 2 and output.shape[1] == 6:
+            dets = output
+        elif output.ndim == 3 and output.shape[-1] == 6:
+            dets = output.reshape(-1, 6)
+        else:
+            return []
+
+        Detections = []
+
+        max_val = np.max(dets[:, :4]) if dets.size else 0
+        normalized = max_val <= 1.5
+
+        for row in dets:
+            x1, y1, x2, y2, conf, cls = row
+            if conf < conf_threshold:
+                continue
+
+            # If coordinates look like xywh (center format), convert to xyxy
+            if x2 < x1 or y2 < y1:
+                x, y, w, h = x1, y1, x2, y2
+                x1 = x - w / 2
+                y1 = y - h / 2
+                x2 = x + w / 2
+                y2 = y + h / 2
+
+            if normalized:
+                x1 *= width
+                x2 *= width
+                y1 *= height
+                y2 *= height
+
+            x1 = max(0, min(width, x1))
+            x2 = max(0, min(width, x2))
+            y1 = max(0, min(height, y1))
+            y2 = max(0, min(height, y2))
+
+            w = max(0, x2 - x1)
+            h = max(0, y2 - y1)
+            if w == 0 or h == 0:
+                continue
+
+            raw_detection = rawDetection(
+                int(x1),
+                int(y1),
+                [float((x1 + x2) / 2), float((y1 + y2) / 2)],
+                int(w),
+                int(h),
+                float(conf),
+                int(cls),
+            )
+            Detections.append(raw_detection)
+
+        return Detections
 
     @staticmethod
     def draw_bboxes(image_raw, bboxes, confidences, categories, all_categories, Detections, bbox_color="white"):
@@ -96,7 +262,7 @@ class Model:
 
 
 class rawDetection:
-    def __init__(self, x: int, y: int, center: [], width: int, height: int, prob: float, classID: int):
+    def __init__(self, x: int, y: int, center: list, width: int, height: int, prob: float, classID: int):
         # Class to store information about a detected object.
 
         self.x = x

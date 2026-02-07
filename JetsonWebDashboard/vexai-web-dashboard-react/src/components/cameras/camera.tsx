@@ -4,7 +4,6 @@ import ConnectingToCameraProgress from "./connecting-to-camera-progress";
 import { Detection, Image } from "../../lib/data-response";
 import useWindowDimensions from "../../lib/hooks";
 import { Layer, Rect, Stage, Text } from "react-konva";
-import { v4 as uuidv4 } from "uuid";
 import { config } from "../../util/config";
 import { PhotoCamera } from "@mui/icons-material";
 import Konva from "konva";
@@ -77,7 +76,7 @@ const Camera = ({ img, detections }: CameraProps) => {
 
   return (
     <Box>
-      {img ? (
+      {img && img.data ? (
         <Box>
           <div
             style={{
@@ -106,24 +105,35 @@ const Camera = ({ img, detections }: CameraProps) => {
             >
               {sorted ? (
                 <>
-                  {sorted.map((detection) => {
-                    const widthRatio =
-                      img.width / (ref.current ? ref.current["clientWidth"] : 1);
-                    const heightRatio =
-                      img.height /
-                      (ref.current ? ref.current["clientHeight"] : 1);
+                  {sorted.map((detection, index) => {
+                    if (!detection?.screenLocation || !detection?.mapLocation) {
+                      return null;
+                    }
+
+                    if (
+                      config.elements.label.text[detection.class] === undefined ||
+                      config.elements.backgroundColors[detection.class] === undefined ||
+                      config.elements.borderColors[detection.class] === undefined
+                    ) {
+                      return null;
+                    }
+
+                    const clientWidth = ref.current ? ref.current["clientWidth"] : 1;
+                    const clientHeight = ref.current ? ref.current["clientHeight"] : 1;
+                    const imgWidth = img?.width ?? clientWidth;
+                    const imgHeight = img?.height ?? clientHeight;
+                    const widthRatio = imgWidth / clientWidth;
+                    const heightRatio = imgHeight / clientHeight;
 
                     const bboxWidth = detection.screenLocation.width / widthRatio;
                     const bboxHeight =
                       detection.screenLocation.height / heightRatio;
 
                     const bboxX =
-                      (detection.screenLocation.x *
-                        (ref.current ? ref.current["clientWidth"] : 1)) /
+                      (detection.screenLocation.x * clientWidth) /
                       config.SCALE_X;
                     const bboxY =
-                      (detection.screenLocation.y *
-                        (ref.current ? ref.current["clientHeight"] : 1)) /
+                      (detection.screenLocation.y * clientHeight) /
                       config.SCALE_Y;
 
                     const classBoxWidth = bboxWidth;
@@ -133,7 +143,7 @@ const Camera = ({ img, detections }: CameraProps) => {
                     return (
                       <>
                         {detection.depth ? ( // depth is -1 if received json detection had a depth of NaN originally
-                          <Layer key={uuidv4()}>
+                          <Layer key={`${detection.class}-${index}`}>
                             {/* class box */}
                             <Rect
                               x={bboxX}
@@ -178,9 +188,9 @@ const Camera = ({ img, detections }: CameraProps) => {
                             {/* coordinates */}
                             <Text
                               fill={config.elements.label.textColors.white}
-                              text={`X ${detection.mapLocation.x[0]
+                              text={`X ${(detection.mapLocation.x?.[0] ?? 0)
                                 .toFixed(2)
-                                .toString()}m\nY ${detection.mapLocation.y[0]
+                                .toString()}m\nY ${(detection.mapLocation.y?.[0] ?? 0)
                                 .toFixed(2)
                                 .toString()}m`}
                               align="left"
