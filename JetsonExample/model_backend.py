@@ -66,11 +66,11 @@ class CUDABackend(ModelBackend):
                             print(parser.get_error(error))
                         return None
 
-                # Set input shape for the network
-                network.get_input(0).shape = [1, 640, 640, 3]
-
                 # Build and serialize the network, then create and return the engine
                 plan = builder.build_serialized_network(network, config)
+                if plan is None:
+                    print("ERROR: Failed to build serialized network.")
+                    return None
                 engine = runtime.deserialize_cuda_engine(plan)
                 with open(engine_file_path, "wb") as f:
                     f.write(plan)
