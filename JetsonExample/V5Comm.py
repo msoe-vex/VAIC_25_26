@@ -63,6 +63,12 @@ class Detection:
         outData['class'] = self.classID
         outData['prob'] = self.probability
         outData['depth'] = self.depth
+        # Flatten screenLocation to top level for frontend compatibility
+        outData['x'] = self.screenLocation.x
+        outData['y'] = self.screenLocation.y
+        outData['width'] = self.screenLocation.width
+        outData['height'] = self.screenLocation.height
+        # Also include nested structure for backward compatibility
         outData['screenLocation'] = self.screenLocation.to_JSON()
         outData['mapLocation'] = self.mapLocation.to_JSON()
         return outData
