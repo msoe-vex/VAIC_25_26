@@ -92,7 +92,7 @@ class CUDABackend(ModelBackend):
         self.engine = CUDABackend.get_engine(onnx_file_path, engine_file_path)
 
         # Create an execution context
-        self.context = self.engine.create_execution_context()
+        self.context = self.engine.create_execution_context_v3()
 
         # Allocate buffers for input and output
         self.inputs, self.outputs, self.bindings, self.stream = cuda_common.allocate_buffers(self.engine)
