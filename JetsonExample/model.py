@@ -47,7 +47,8 @@ class Model:
             return inputImage, Detections
 
         # Filter invalid and low-confidence boxes before drawing
-        valid = scores > 0.0
+        confidence_threshold = 0.25
+        valid = scores > confidence_threshold
         if np.any(valid):
             boxes = boxes[valid]
             scores = scores[valid]
