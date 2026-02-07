@@ -19,20 +19,54 @@ class Model:
             print("Using Coral Edge TPU for model inferencing")
         else:
             print("No backend found! Make sure you have CUDA or Coral installed based on your device")
+            self.backend = None
+
+        self._num_classes = len(ALL_CATEGORIES)
+        self._input_resolution = self._resolve_input_resolution()
+
+    def _resolve_input_resolution(self):
+        if self.backend is not None and hasattr(self.backend, "input_resolution"):
+            return self.backend.input_resolution
+        return (320, 320)
+
+    def _infer_output_shapes(self, outputs):
+        channel_size = 3 * (5 + self._num_classes)
+        output_shapes = []
+        for output in outputs:
+            size = output.size
+            if size % channel_size != 0:
+                continue
+            grid = int(round(np.sqrt(size / channel_size)))
+            if grid * grid * channel_size != size:
+                continue
+            output_shapes.append((1, grid, grid, channel_size))
+        return output_shapes
+
+    def _scaled_anchors(self, input_resolution):
+        base_anchors = [
+            (10, 14),
+            (23, 27),
+            (37, 58),
+            (81, 82),
+            (135, 169),
+            (344, 319),
+        ]
+        scale = input_resolution[0] / 416.0
+        return [(a[0] * scale, a[1] * scale) for a in base_anchors]
 
     def inference(self, inputImage):
         # Perform inference on the given image and return the bounding boxes, scores, and classes of detected objects.
+        if self.backend is None:
+            print("No backend available for inference.")
+            return inputImage, []
 
         # Define input resolution and create preprocessor
-        input_resolution_yolov3_HW = (320, 320)
+        input_resolution_yolov3_HW = self._input_resolution
         preprocessor = PreprocessYOLO(input_resolution_yolov3_HW)
 
         # Process the image and get original shape
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
         shape_orig_WH = image_raw.size
-
-        # Define output shapes for post-processing
-        output_shapes = [(1, 10, 10, 21), (1, 20, 20, 21)]
 
         # Set the input and perform inference
         outputs = self.backend.inference(image)
@@ -41,19 +75,16 @@ class Model:
         outputs = sorted(outputs, key=lambda o: o.size)
 
         # Reshape the outputs for post-processing
+        output_shapes = self._infer_output_shapes(outputs)
+        if len(output_shapes) != len(outputs):
+            print("[WARN] Unexpected output sizes; skipping detections.")
+            return inputImage, []
         outputs = [output.reshape(shape) for output, shape in zip(outputs, output_shapes)]
 
         # Define arguments for post-processing
         postprocessor_args = {
             "yolo_masks": [(3, 4, 5), (0, 1, 2)],
-            "yolo_anchors": [
-            (10, 14),
-            (23, 27),
-            (37, 58),
-            (81, 82),
-            (135, 169),
-            (344, 319),
-            ],
+            "yolo_anchors": self._scaled_anchors(input_resolution_yolov3_HW),
             "obj_threshold": [0.25, 0.25],  # Very low threshold for debugging
             "nms_threshold": 0.5,
             "yolo_input_resolution": input_resolution_yolov3_HW,
@@ -109,7 +140,7 @@ class Model:
 
 
 class rawDetection:
-    def __init__(self, x: int, y: int, center: [], width: int, height: int, prob: float, classID: int):
+    def __init__(self, x: int, y: int, center: list, width: int, height: int, prob: float, classID: int):
         # Class to store information about a detected object.
 
         self.x = x

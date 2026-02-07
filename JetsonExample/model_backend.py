@@ -34,7 +34,7 @@ class ModelBackend(ABC):
 class CUDABackend(ModelBackend):
 
     @staticmethod
-    def get_engine(onnx_file_path, engine_file_path=""):
+    def get_engine(onnx_file_path, engine_file_path="", input_shape=None):
         TRT_LOGGER = trt.Logger()
         # Attempts to load a pre-existing TensorRT engine, otherwise builds and returns a new one.
 
@@ -66,8 +66,14 @@ class CUDABackend(ModelBackend):
                             print(parser.get_error(error))
                         return None
 
-                # Set input shape for the network
-                network.get_input(0).shape = [1, 320, 320, 3]
+                # Set input shape only if explicitly provided or if ONNX has dynamic dims
+                input_tensor = network.get_input(0)
+                if input_shape is not None:
+                    input_tensor.shape = input_shape
+                else:
+                    has_dynamic = any(dim <= 0 for dim in input_tensor.shape)
+                    if has_dynamic:
+                        input_tensor.shape = [1, 416, 416, 3]
 
                 # Build and serialize the network, then create and return the engine
                 plan = builder.build_serialized_network(network, config)
@@ -85,8 +91,8 @@ class CUDABackend(ModelBackend):
 
     def __init__(self):
         current_folder_path = os.path.dirname(os.path.abspath(__file__))
-        onnx_file_path = os.path.join(current_folder_path, "models/pushback_lite.onnx")  # If you change the onnx file to your own model, adjust the file name here
-        engine_file_path = os.path.join(current_folder_path, "models/pushback_lite.trt")  # This should match the .onnx file name
+        onnx_file_path = os.path.join(current_folder_path, "models/yolo_26.onnx")  # If you change the onnx file to your own model, adjust the file name here
+        engine_file_path = os.path.join(current_folder_path, "models/yolo_26.trt")  # This should match the .onnx file name
 
         # Get the TensorRT engine
         self.engine = CUDABackend.get_engine(onnx_file_path, engine_file_path)
@@ -96,6 +102,34 @@ class CUDABackend(ModelBackend):
 
         # Allocate buffers for input and output
         self.inputs, self.outputs, self.bindings, self.stream = cuda_common.allocate_buffers(self.engine)
+
+        # Cache input resolution from the engine
+        self._input_resolution = self._resolve_input_resolution()
+
+    def _resolve_input_resolution(self):
+        input_shape = None
+        for binding in self.engine:
+            if self.engine.get_tensor_mode(binding) == trt.TensorIOMode.INPUT:
+                input_shape = self.engine.get_tensor_shape(binding)
+                break
+
+        if input_shape is None:
+            return (320, 320)
+
+        shape = list(input_shape)
+        if len(shape) != 4:
+            return (320, 320)
+
+        # Accept NHWC or NCHW. Find the two spatial dims.
+        if shape[1] == 3:
+            height, width = shape[2], shape[3]
+        else:
+            height, width = shape[1], shape[2]
+
+        if height <= 0 or width <= 0:
+            return (320, 320)
+
+        return (int(height), int(width))
 
     def inference(self, image):
         self.inputs[0].host = image
@@ -107,6 +141,10 @@ class CUDABackend(ModelBackend):
     @property
     def dtype(self):
         return np.float32
+
+    @property
+    def input_resolution(self):
+        return self._input_resolution
     
 class CoralBackend(ModelBackend):
     
@@ -122,6 +160,22 @@ class CoralBackend(ModelBackend):
         self.interpreter = make_interpreter(tflite_file_path)
       
         self.interpreter.allocate_tensors()
+        self._input_resolution = self._resolve_input_resolution()
+
+    def _resolve_input_resolution(self):
+        details = self.interpreter.get_input_details()
+        if not details:
+            return (320, 320)
+        shape = list(details[0]["shape"])
+        if len(shape) != 4:
+            return (320, 320)
+        if shape[1] == 3:
+            height, width = shape[2], shape[3]
+        else:
+            height, width = shape[1], shape[2]
+        if height <= 0 or width <= 0:
+            return (320, 320)
+        return (int(height), int(width))
 
     def inference(self, image):
         coral_common.set_input(self.interpreter, image)
@@ -148,3 +202,7 @@ class CoralBackend(ModelBackend):
     @property
     def dtype(self):
         return np.int8
+
+    @property
+    def input_resolution(self):
+        return self._input_resolution
