@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from PIL import ImageDraw
-from data_processing import PreprocessYOLO, PostprocessYOLO, ALL_CATEGORIES
+from data_processing import PreprocessYOLO, ALL_CATEGORIES
 from model_backend import CUDABackend, CoralBackend, USE_CUDA, USE_CORAL
 
 
@@ -9,6 +9,11 @@ from model_backend import CUDABackend, CoralBackend, USE_CUDA, USE_CORAL
 np.set_printoptions(threshold=sys.maxsize)
 
 class Model:
+
+    # Confidence threshold for filtering detections
+    OBJ_THRESHOLD = 0.25
+    # NMS IoU threshold for suppressing overlapping boxes
+    NMS_THRESHOLD = 0.5
 
     def __init__(self):
         if USE_CUDA:
@@ -20,55 +25,130 @@ class Model:
         else:
             print("No backend found! Make sure you have CUDA or Coral installed based on your device")
 
+    @staticmethod
+    def _nms_boxes(boxes, confidences, nms_threshold):
+        """Apply Non-Maximum Suppression on boxes in [x, y, w, h] format.
+
+        Returns indices of boxes to keep.
+        """
+        x = boxes[:, 0]
+        y = boxes[:, 1]
+        w = boxes[:, 2]
+        h = boxes[:, 3]
+
+        areas = w * h
+        ordered = confidences.argsort()[::-1]
+
+        keep = []
+        while ordered.size > 0:
+            i = ordered[0]
+            keep.append(i)
+            xx1 = np.maximum(x[i], x[ordered[1:]])
+            yy1 = np.maximum(y[i], y[ordered[1:]])
+            xx2 = np.minimum(x[i] + w[i], x[ordered[1:]] + w[ordered[1:]])
+            yy2 = np.minimum(y[i] + h[i], y[ordered[1:]] + h[ordered[1:]])
+
+            inter_w = np.maximum(0.0, xx2 - xx1 + 1)
+            inter_h = np.maximum(0.0, yy2 - yy1 + 1)
+            intersection = inter_w * inter_h
+            union = areas[i] + areas[ordered[1:]] - intersection
+
+            iou = intersection / union
+            indexes = np.where(iou <= nms_threshold)[0]
+            ordered = ordered[indexes + 1]
+
+        return np.array(keep)
+
+    @staticmethod
+    def _postprocess_yolov26(raw_output, shape_orig_WH, input_resolution_HW,
+                             obj_threshold, nms_threshold):
+        """Convert YOLOv26 output [1, 300, 6] into the same (boxes, classes, scores)
+        format that the old YOLOv3 PostprocessYOLO produced.
+
+        YOLOv26 raw_output layout per detection: [x1, y1, x2, y2, confidence, class_id]
+        Coordinates are in input-resolution pixel space (e.g. 320x320).
+
+        Returns
+        -------
+        boxes : ndarray (N, 4)  [x, y, w, h] in original image pixels (top-left origin)
+        classes : ndarray (N,)  integer class IDs
+        scores : ndarray (N,)   confidence values
+        All three are None when no detections survive filtering.
+        """
+        detections = raw_output.reshape(-1, 6)  # (300, 6)
+
+        confs = detections[:, 4]
+        mask = confs >= obj_threshold
+        detections = detections[mask]
+
+        if detections.shape[0] == 0:
+            return None, None, None
+
+        # Extract fields
+        x1 = detections[:, 0]
+        y1 = detections[:, 1]
+        x2 = detections[:, 2]
+        y2 = detections[:, 3]
+        scores = detections[:, 4]
+        classes = detections[:, 5].astype(int)
+
+        # Convert from xyxy to xywh (top-left, width, height)
+        w = x2 - x1
+        h = y2 - y1
+        boxes = np.stack([x1, y1, w, h], axis=-1)
+
+        # Scale from input resolution to original image size
+        inp_h, inp_w = input_resolution_HW
+        orig_w, orig_h = shape_orig_WH
+        scale_x = orig_w / inp_w
+        scale_y = orig_h / inp_h
+        boxes[:, 0] *= scale_x
+        boxes[:, 2] *= scale_x
+        boxes[:, 1] *= scale_y
+        boxes[:, 3] *= scale_y
+
+        # Per-class NMS (same logic the old pipeline used)
+        nms_boxes, nms_classes, nms_scores = [], [], []
+        for cls in set(classes):
+            idxs = np.where(classes == cls)[0]
+            cls_boxes = boxes[idxs]
+            cls_scores = scores[idxs]
+            keep = Model._nms_boxes(cls_boxes, cls_scores, nms_threshold)
+            nms_boxes.append(cls_boxes[keep])
+            nms_classes.append(classes[idxs][keep])
+            nms_scores.append(cls_scores[keep])
+
+        if not nms_boxes:
+            return None, None, None
+
+        boxes = np.concatenate(nms_boxes)
+        classes = np.concatenate(nms_classes)
+        scores = np.concatenate(nms_scores)
+
+        return boxes, classes, scores
+
     def inference(self, inputImage):
         # Perform inference on the given image and return the bounding boxes, scores, and classes of detected objects.
 
         # Define input resolution and create preprocessor
-        input_resolution_yolov3_HW = (320, 320)
-        preprocessor = PreprocessYOLO(input_resolution_yolov3_HW)
+        input_resolution_HW = (640, 640)
+        preprocessor = PreprocessYOLO(input_resolution_HW)
 
         # Process the image and get original shape
         image_raw, image = preprocessor.process(inputImage, self.backend.dtype)
         shape_orig_WH = image_raw.size
 
-        # Define output shapes for post-processing
-        output_shapes = [(1, 10, 10, 21), (1, 20, 20, 21)]
-
-        # Set the input and perform inference
+        # Run model inference (YOLOv26 output shape: [1, 300, 6])
         outputs = self.backend.inference(image)
 
-        # Sort tensors from smallest to largest
-        outputs = sorted(outputs, key=lambda o: o.size)
+        # YOLOv26 produces a single output tensor [1, 300, 6]
+        # Each detection: [x1, y1, x2, y2, confidence, class_id]
+        raw_output = outputs[0] if isinstance(outputs, (list, tuple)) else outputs
 
-        # Reshape the outputs for post-processing
-        outputs = [output.reshape(shape) for output, shape in zip(outputs, output_shapes)]
-
-        # Define arguments for post-processing
-        postprocessor_args = {
-            "yolo_masks": [(3, 4, 5), (0, 1, 2)],
-            "yolo_anchors": [
-            (10, 14),
-            (23, 27),
-            (37, 58),
-            (81, 82),
-            (135, 169),
-            (344, 319),
-            ],
-            "obj_threshold": [0.25, 0.25],  # Very low threshold for debugging
-            "nms_threshold": 0.5,
-            "yolo_input_resolution": input_resolution_yolov3_HW,
-        }
-
-        # Perform post-processing
-        postprocessor = PostprocessYOLO(**postprocessor_args)
-        
-        # Debug: Check raw model output values BEFORE postprocessing
-        for i, out in enumerate(outputs):
-            obj_channel = out[..., 4]  # Objectness scores are at index 4
-            # Apply sigmoid to get actual confidence
-            obj_sigmoid = 1.0 / (1.0 + np.exp(-obj_channel))
-        
-        boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
+        boxes, classes, scores = Model._postprocess_yolov26(
+            raw_output, shape_orig_WH, input_resolution_HW,
+            self.OBJ_THRESHOLD, self.NMS_THRESHOLD,
+        )
 
         Detections = []
 

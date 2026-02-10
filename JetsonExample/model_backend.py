@@ -85,8 +85,8 @@ class CUDABackend(ModelBackend):
 
     def __init__(self):
         current_folder_path = os.path.dirname(os.path.abspath(__file__))
-        onnx_file_path = os.path.join(current_folder_path, "models/pushback_lite.onnx")  # If you change the onnx file to your own model, adjust the file name here
-        engine_file_path = os.path.join(current_folder_path, "models/pushback_lite.trt")  # This should match the .onnx file name
+        onnx_file_path = os.path.join(current_folder_path, "models/yolo_26_2.onnx")  # If you change the onnx file to your own model, adjust the file name here
+        engine_file_path = os.path.join(current_folder_path, "models/yolo_26_2.trt")  # This should match the .onnx file name
 
         # Get the TensorRT engine
         self.engine = CUDABackend.get_engine(onnx_file_path, engine_file_path)
