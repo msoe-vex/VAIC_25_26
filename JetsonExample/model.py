@@ -100,6 +100,9 @@ class Model:
         scores = detections[:, 4]
         classes = detections[:, 5].astype(int)
 
+        # Swap classes: 0 (BallBlue) <-> 1 (BallRed)
+        classes = np.where(classes == 0, 1, np.where(classes == 1, 0, classes))
+
         # Convert from xyxy to xywh (top-left, width, height)
         w = x2 - x1
         h = y2 - y1
