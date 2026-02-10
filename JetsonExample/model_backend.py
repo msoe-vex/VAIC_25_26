@@ -66,8 +66,8 @@ class CUDABackend(ModelBackend):
                             print(parser.get_error(error))
                         return None
 
-                # Set input shape for the network
-                network.get_input(0).shape = [1, 320, 320, 3]
+                # Set input shape for the network (NCHW for YOLOv26)
+                network.get_input(0).shape = [1, 3, 640, 640]
 
                 # Build and serialize the network, then create and return the engine
                 plan = builder.build_serialized_network(network, config)

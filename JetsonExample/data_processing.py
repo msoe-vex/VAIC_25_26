@@ -95,7 +95,7 @@ class PreprocessYOLO(object):
         elif (dtype == np.int8):
             image -= 128
         # HWC to CHW format:
-        #image = np.transpose(image, [2, 0, 1])
+        image = np.transpose(image, [2, 0, 1])
         # CHW to NCHW format
         image = np.expand_dims(image, axis=0)
         # Convert the image to row-major order, also known as "C order":
