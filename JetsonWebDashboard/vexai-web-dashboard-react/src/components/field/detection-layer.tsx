@@ -38,7 +38,7 @@ const DetectionLayer = ({ fieldWidth, fieldHeight }: DetectionLayerProps) => {
     <Layer>
       {detections ? (
         <>
-          {detections.map((detection) => {
+          {detections.filter((detection) => config.elements.size[detection.class] !== undefined).map((detection) => {
             const widthScale = scale * config.elements.size[detection.class].width * config.elements.size[detection.class].scale;
             const heightScale = scale * config.elements.size[detection.class].height * config.elements.size[detection.class].scale;
             return (

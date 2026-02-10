@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from PIL import ImageDraw
-from data_processing import PreprocessYOLO, ALL_CATEGORIES
+from data_processing import PreprocessYOLO, ALL_CATEGORIES, CATEGORY_NUM
 from model_backend import CUDABackend, CoralBackend, USE_CUDA, USE_CORAL
 
 
@@ -80,6 +80,14 @@ class Model:
         confs = detections[:, 4]
         mask = confs >= obj_threshold
         detections = detections[mask]
+
+        if detections.shape[0] == 0:
+            return None, None, None
+
+        # Filter out detections with invalid class IDs (must be 0..CATEGORY_NUM-1)
+        class_ids = detections[:, 5].astype(int)
+        valid_class_mask = (class_ids >= 0) & (class_ids < CATEGORY_NUM)
+        detections = detections[valid_class_mask]
 
         if detections.shape[0] == 0:
             return None, None, None
