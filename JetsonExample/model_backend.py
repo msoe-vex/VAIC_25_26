@@ -66,20 +66,8 @@ class CUDABackend(ModelBackend):
                             print(parser.get_error(error))
                         return None
 
-                # Set input shape only if explicitly provided or if ONNX has dynamic dims
-                input_tensor = network.get_input(0)
-                if input_shape is not None:
-                    input_tensor.shape = input_shape
-                else:
-                    has_dynamic = any(dim <= 0 for dim in input_tensor.shape)
-                    shape = list(input_tensor.shape)
-
-                    # If dynamic or NHWC-like, force a safe NCHW shape for TRT
-                    if has_dynamic:
-                        input_tensor.shape = [1, 3, 416, 416]
-                    elif len(shape) == 4 and shape[-1] == 3 and shape[1] != 3:
-                        # Likely NHWC provided; TRT expects NCHW
-                        input_tensor.shape = [1, 3, shape[1], shape[2]]
+                # Set input shape for the network (NCHW for YOLOv26)
+                network.get_input(0).shape = [1, 3, 640, 640]
 
                 # Build and serialize the network, then create and return the engine
                 plan = builder.build_serialized_network(network, config)
@@ -99,8 +87,8 @@ class CUDABackend(ModelBackend):
 
     def __init__(self):
         current_folder_path = os.path.dirname(os.path.abspath(__file__))
-        onnx_file_path = os.path.join(current_folder_path, "models/yolo_26.onnx")  # If you change the onnx file to your own model, adjust the file name here
-        engine_file_path = os.path.join(current_folder_path, "models/yolo_26.trt")  # This should match the .onnx file name
+        onnx_file_path = os.path.join(current_folder_path, "models/yolo_26_2.onnx")  # If you change the onnx file to your own model, adjust the file name here
+        engine_file_path = os.path.join(current_folder_path, "models/yolo_26_2.trt")  # This should match the .onnx file name
 
         # Get the TensorRT engine
         self.engine = CUDABackend.get_engine(onnx_file_path, engine_file_path)

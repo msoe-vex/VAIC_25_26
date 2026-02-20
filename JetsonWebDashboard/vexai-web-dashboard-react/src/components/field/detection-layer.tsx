@@ -38,27 +38,9 @@ const DetectionLayer = ({ fieldWidth, fieldHeight }: DetectionLayerProps) => {
     <Layer>
       {detections ? (
         <>
-          {detections.map((detection, index) => {
-            if (!detection || typeof detection.class !== "number") {
-              return null;
-            }
-            const elementConfig = config?.elements?.size?.[detection.class];
-            if (!elementConfig || !detection.mapLocation) {
-              return null;
-            }
-            const mapX = detection.mapLocation.x?.[0];
-            const mapY = detection.mapLocation.y?.[0];
-            if (mapX === undefined || mapY === undefined) {
-              return null;
-            }
-
-            const widthScale =
-              scale * (elementConfig?.width ?? 0) * (elementConfig?.scale ?? 0);
-            const heightScale =
-              scale * (elementConfig?.height ?? 0) * (elementConfig?.scale ?? 0);
-            if (!widthScale || !heightScale) {
-              return null;
-            }
+          {detections.filter((detection) => config.elements.size[detection.class] !== undefined).map((detection) => {
+            const widthScale = scale * config.elements.size[detection.class].width * config.elements.size[detection.class].scale;
+            const heightScale = scale * config.elements.size[detection.class].height * config.elements.size[detection.class].scale;
             return (
               <>
                 {detection.depth !== -1 ? (
