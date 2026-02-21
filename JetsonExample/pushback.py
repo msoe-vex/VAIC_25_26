@@ -308,6 +308,8 @@ class PushbackHandler:
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
         rec_header_upper = rec_header.upper()
+
+        print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
         
         if rec_header_upper == "INIT":
             parts = rec_body.split(',')
