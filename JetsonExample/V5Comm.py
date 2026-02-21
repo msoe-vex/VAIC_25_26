@@ -199,14 +199,14 @@ class V5SerialComms:
                     devices = [dev for dev in comports() if "V5" in dev.description and "User" in dev.description]
                     # self.devices = [dev for dev in comports()]
                     # print(self.devices)
-                    if(len(devices) == 0 and count <= 5):
+                    if(len(devices) == 0): # If no devices found, print message and retry after 1 second, do this indefinitely until a device is found (or thread is stopped)
                         print("No V5 Brain detected.", flush=True)
                         time.sleep(1)  # Wait for 1 second before retrying
                         count += 1
                         continue
-                    elif(count > 5):
-                        return None  # Return None if no devices found after 5 tries
-                        break
+                    # elif(count > 5):
+                    #     return None  # Return None if no devices found after 5 tries
+                    #     break
                     else:
                         port = devices[0].device  # Return None if no devices found after 3 tries
                     
