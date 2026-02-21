@@ -420,11 +420,20 @@ class PushbackHandler:
         
         robot_x = self._observation[ObsIndex.SELF_POS_X]
         robot_y = self._observation[ObsIndex.SELF_POS_Y]
+
+        def to_scalar(value):
+            arr = np.asarray(value)
+            if arr.ndim == 0:
+                return float(arr)
+            if arr.size == 0:
+                return np.nan
+            return float(arr.reshape(-1)[0])
         
         def clamp(value, min_value, max_value):
-            if np.isnan(value):
-                return value # keep NaN as is
-            return max(min_value, min(value, max_value))
+            scalar_value = to_scalar(value)
+            if np.isnan(scalar_value):
+                return scalar_value  # keep NaN as is
+            return max(min_value, min(scalar_value, max_value))
 
         for det in detections:
             # Get map position
