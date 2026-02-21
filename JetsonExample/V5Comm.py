@@ -6,6 +6,8 @@ import json
 from json import JSONEncoder
 import serial
 import time
+import numpy as np
+
 from V5Position import Position
     
 class ImageDetection:
@@ -46,13 +48,13 @@ class Detection:
         self.probability = probability
         self.depth = depth
         self.screenLocation = screenLocation
-        self.mapLocattion = mapLocation
+        self.mapLocation = mapLocation
 
     def to_Serial(self):
         # Convert Detection properties to serialized binary format
         data = struct.pack('<iff', self.classID, self.probability, self.depth)
         data += self.screenLocation.to_Serial()
-        data += self.mapLocattion.to_Serial()
+        data += self.mapLocation.to_Serial()
         return data
     
     def to_JSON(self):
@@ -62,7 +64,7 @@ class Detection:
         outData['prob'] = self.probability
         outData['depth'] = self.depth
         outData['screenLocation'] = self.screenLocation.to_JSON()
-        outData['mapLocation'] = self.mapLocattion.to_JSON()
+        outData['mapLocation'] = self.mapLocation.to_JSON()
         return outData
 
 
@@ -137,13 +139,22 @@ class V5SerialComms:
 
     __MAP_PACKET_TYPE = 0x0001
 
-    def __init__(self, port = None):
-        # Initialize properties of V5SerialComms class, including port, started status, and lock
+    def __init__(self, port=None, handler=None):
+        """
+        Initialize V5 serial communications.
+        
+        Args:
+            port: Serial port to use (auto-detected if None)
+            handler: Optional callback handler (e.g., PushbackHandler) for 
+                     processing received messages with headers
+        """
         self.__dev = port
         self.__started = False
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
+        self.__data = {}
+        self.__handler = handler
 
     def start(self):
         # Start serial communication thread
@@ -151,6 +162,31 @@ class V5SerialComms:
         self.__thread = threading.Thread(target=self.__run, args=())
         self.__thread.daemon = True
         self.__thread.start()
+
+    def write(self, header: str, body: str):
+        # Write data to the serial port in the format "#header|body\n"
+        if(self.__ser != None and self.__ser.isOpen()):
+            line = f"#{header}|{body}\n"
+            self.__ser.write(line.encode('utf-8'))
+            self.__ser.flush()
+    
+    def __read(self):
+        # Read and return header and body based on "#header|body\n" format
+        if(self.__ser != None and self.__ser.isOpen()):
+            line =  self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
+            header = ""
+            body = ""
+            if not line:
+                return "", ""
+            # normalize payload (strip leading '#')
+            payload = line[1:] if line.startswith('#') else line
+            # only accept messages that contain a header and body separated by '|'
+            if '|' not in payload:
+                return "", ""
+            # split once into header and body
+            header, body = payload.split('|', 1)
+            return header.strip(), body.strip()
+        return "", ""
 
     def __run(self):
         count = 1
@@ -163,46 +199,47 @@ class V5SerialComms:
                     devices = [dev for dev in comports() if "V5" in dev.description and "User" in dev.description]
                     # self.devices = [dev for dev in comports()]
                     # print(self.devices)
-                    if(len(devices) == 0 and count <= 5):
-                        print("No V5 Brain detected.")
+                    if(len(devices) == 0): # If no devices found, print message and retry after 1 second, do this indefinitely until a device is found (or thread is stopped)
+                        print("No V5 Brain detected.", flush=True)
                         time.sleep(1)  # Wait for 1 second before retrying
                         count += 1
                         continue
-                    elif(count > 5):
-                        return None  # Return None if no devices found after 5 tries
-                        break
+                    # elif(count > 5):
+                    #     return None  # Return None if no devices found after 5 tries
+                    #     break
                     else:
                         port = devices[0].device  # Return None if no devices found after 3 tries
                     
-                print("Connecting to ", port)
+                print(f"Connecting to {port}", flush=True)
 
                 # Establish serial connection with the port
                 self.__ser = serial.Serial(port, 115200, timeout=10)
                 self.__ser.flushInput()
                 self.__ser.flushOutput()
 
+                count = 0
+
                 while self.__started:  # Continue reading while thread is started
                     # Read data from the serial port
-                    data = self.__ser.readline().decode("utf-8").rstrip()
-                    # print(data)
-                    if(data == "AA55CC3301"):
-                        #send data
-                        self.__detectionLock.acquire()
-                        myPacket = V5SerialPacket(self.__MAP_PACKET_TYPE, self.__detections)
-                        self.__detectionLock.release()
-                        data = myPacket.to_Serial()
-                        self.__ser.write(data)  # Write serialized data to the serial port
+                    header, body = self.__read()
 
+                    # # send a line that the C++ parser will recognize: "#header|body\n"
+                    # self.write("test", "message")
+
+                    # Delegate message handling to the callback handler
+                    if self.__handler:
+                        self.__handler.handle(header, body)
+                    
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
             except serial.SerialException as e:
-                print("Could not connect to ", port, ". Exception: ", e)
+                print("Could not connect to ", port, ". Exception: ", e, flush=True)
                 time.sleep(1)    # Wait for 1 second before retrying
         
             if(self.__ser.isOpen()):
                 self.__ser.close()    # Close the serial port if open
 
-        print("V5SerialComms thread stopped.")
+        print("V5SerialComms thread stopped.", flush=True)
 
     def setDetectionData(self, data: AIRecord):
         # Aquire lock and set detection data
@@ -217,4 +254,4 @@ class V5SerialComms:
 
     def __del__(self):
         # Destructor to call the stop method when the object is deleted
-        self.stop
+        self.stop()

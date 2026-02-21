@@ -54,13 +54,20 @@ class Model:
             (135, 169),
             (344, 319),
             ],
-            "obj_threshold": [0.5, 0.5],  # Different thresholds for each class label (Green, Red, Blue)
+            "obj_threshold": [0.25, 0.25],  # Very low threshold for debugging
             "nms_threshold": 0.5,
             "yolo_input_resolution": input_resolution_yolov3_HW,
         }
 
         # Perform post-processing
         postprocessor = PostprocessYOLO(**postprocessor_args)
+        
+        # Debug: Check raw model output values BEFORE postprocessing
+        for i, out in enumerate(outputs):
+            obj_channel = out[..., 4]  # Objectness scores are at index 4
+            # Apply sigmoid to get actual confidence
+            obj_sigmoid = 1.0 / (1.0 + np.exp(-obj_channel))
+        
         boxes, classes, scores = postprocessor.process(outputs, (shape_orig_WH))
 
         Detections = []

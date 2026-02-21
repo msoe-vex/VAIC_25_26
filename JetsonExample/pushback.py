@@ -13,10 +13,24 @@ from V5Comm import V5SerialComms
 from V5Position import Position
 from V5Position import V5GPS
 from V5Web import V5WebData
-from V5Web import Statistics
+from V5Web import Statistics, CameraOffset, GPSOffset
 
 from model import Model, rawDetection
 
+import sys
+import os
+
+# Add repository root to path for VEXAIRL imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from VEXAIRL.vex_model_run import VexModelRunner
+from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
+from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
+from VEXAIRL.pushback.pushback import ObsIndex
+
+
+METERS_TO_INCHES = 39.3701
+INCHES_TO_METERS = 1 / METERS_TO_INCHES
 
 class Camera:
     # Class handles Camera object instantiation and data requests.
@@ -99,36 +113,50 @@ class Processing:
         height = detection.Height
         width = detection.Width
 
-        low_limit_y = 45
-        high_limit_y = 55
-        low_limit_x = 45
-        high_limit_x = 55
-        # Calculate the indices of 10% of the detection.
+        # Calculate the indices of 50% of the detection (center crop)
+        # using 25% margin on each side (25-75 range)
+        low_limit_y = 25
+        high_limit_y = 75
+        low_limit_x = 25
+        high_limit_x = 75
+        
         top = int(detection.y) + height * low_limit_y // 100
         bottom = int(detection.y) + height * high_limit_y // 100
         left = int(detection.x) + width * low_limit_x // 100
         right = int(detection.x) + width * high_limit_x // 100
 
-        # Extract depth values and scale them
-        top_left = self.project_color_to_depth(self.depth_frame_aligned.get_data(), (top, left))
-        bottom_right = self.project_color_to_depth(self.depth_frame_aligned.get_data(), (bottom, right))
+        # Ensure indices are within bounds
+        top = max(0, top)
+        left = max(0, left)
+        bottom = min(depth_img.shape[0], bottom)
+        right = min(depth_img.shape[1], right)
 
-        r1, c1 = top_left
-        r2, c2 = bottom_right
-        depth_img = depth_img[r1:r2, c1:c2]
-        depth_img = depth_img * self.depth_scale
+        # Slice depth image directly (frames are aligned)
+        depth_slice = depth_img[top:bottom, left:right]
+        
+        # Apply depth scale
+        depth_slice = depth_slice * self.depth_scale
+        
         # Filter non-zero depth values
-        depth_img = depth_img[depth_img != 0]
-        # Compute and return mean depth value
-        meanDepth = np.nanmean(depth_img)
+        valid_depths = depth_slice[depth_slice != 0]
+
+        if valid_depths.size == 0:
+            return -1
+
+        # Compute mean depth value
+        meanDepth = np.nanmean(valid_depths)
+        
+        if np.isnan(meanDepth):
+            return -1
+            
         return meanDepth
 
     def align_frames(self, frames):
         # Align depth frames to color frames
-        #aligned_frames = self.align.process(frames)
+        aligned_frames = self.align.process(frames)
         # Get the aligned frames and validate them
-        self.depth_frame_aligned = frames.get_depth_frame()
-        self.color_frame_aligned = frames.get_color_frame()
+        self.depth_frame_aligned = aligned_frames.get_depth_frame()
+        self.color_frame_aligned = aligned_frames.get_color_frame()
 
         if not self.depth_frame_aligned or not self.color_frame_aligned:
             print(f"WARNING: Invalid frames - depth: {self.depth_frame_aligned is not None}, color: {self.color_frame_aligned is not None}")
@@ -225,6 +253,252 @@ class Rendering:
             cv2.destroyAllWindows()
 
 
+
+class PushbackHandler:
+    """
+    Callback handler for V5Comm to manage VEXAIRL observations and model inference.
+    """
+    
+    # Block class IDs from detection model
+    CLASS_RED_BLOCK = 0
+    CLASS_BLUE_BLOCK = 1
+    
+    MAX_TRACKED_BLOCKS = 15
+    
+    def __init__(self, write_func, update_camera_func, update_gps_func):
+        self._model_runner: VexModelRunner = None
+        self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+        self._write = write_func
+        self._team: Team = None  # Set when model is initialized
+        self._start_time: float = None
+        self._total_time: float = None
+        self._update_camera = update_camera_func
+        self._update_gps = update_gps_func
+        
+    def set_write_func(self, write_func):
+        """Set the write callback after construction."""
+        self._write = write_func
+        
+    @property
+    def observation(self):
+        return self._observation
+    
+    @property
+    def model_runner(self):
+        return self._model_runner
+
+    def _send_action(self):
+        if self._model_runner is None or self._write is None:
+            print("[DEBUG] Model runner or write function not initialized, cannot send action.", flush=True)
+            return
+
+        # Update time remaining
+        if self._start_time is not None and self._total_time is not None:
+            self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
+
+        action, split_actions = self._model_runner.get_inference(self._observation)
+        print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
+        # Format: action_id\ncommand1\ncommand2\n...
+        send_header = "RUN_ACTION"
+        send_body = str(action) + "/" + "/".join(split_actions)
+        self._write(send_header, send_body)
+
+        print(f"[DEBUG] Sent action {action} with commands: {split_actions}", flush=True)
+    
+    def handle(self, rec_header: str, rec_body: str) -> None:
+        """Handle incoming USB message from V5Comm."""
+        rec_header_upper = rec_header.upper()
+
+        print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
+        
+        if rec_header_upper == "INIT":
+            parts = rec_body.split(',')
+            if len(parts) < 17:
+                raise ValueError("Expected 17 comma-separated values: name, team, size, length, width, start_x, start_y, start_orient, cam_x, cam_y, cam_z, cam_heading, cam_elevation, gps_x, gps_y, gps_z, gps_heading")
+            name = parts[0].strip()
+            print(f"[DEBUG] Initializing model for robot '{name}'", flush=True)
+            team = Team(parts[1].strip().lower())
+            print(f"[DEBUG] Team set to '{team.name}'", flush=True)
+            size = RobotSize(int(parts[2].strip()))
+            print(f"[DEBUG] Robot size set to '{size.name}'", flush=True)
+            length = float(parts[3].strip())
+            print(f"[DEBUG] Robot length set to '{length}'", flush=True)
+            width = float(parts[4].strip())
+            print(f"[DEBUG] Robot width set to '{width}'", flush=True)
+            start_x = float(parts[5].strip())
+            print(f"[DEBUG] Robot start_x set to '{start_x}'", flush=True)
+            start_y = float(parts[6].strip())
+            print(f"[DEBUG] Robot start_y set to '{start_y}'", flush=True)
+            start_orient = float(parts[7].strip())
+            print(f"[DEBUG] Robot start_orientation set to '{start_orient}'", flush=True)
+            cam_x = float(parts[8].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset x set to '{cam_x}' meters", flush=True)
+            cam_y = float(parts[9].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset y set to '{cam_y}' meters", flush=True)
+            cam_z = float(parts[10].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] Camera offset z set to '{cam_z}' meters", flush=True)
+            cam_heading = float(parts[11].strip())
+            print(f"[DEBUG] Camera heading offset set to '{cam_heading}' degrees", flush=True)
+            cam_elevation = float(parts[12].strip())
+            print(f"[DEBUG] Camera elevation offset set to '{cam_elevation}' degrees", flush=True)
+            gps_x = float(parts[13].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset x set to '{gps_x}' meters", flush=True)
+            gps_y = float(parts[14].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset y set to '{gps_y}' meters", flush=True)
+            gps_z = float(parts[15].strip())*INCHES_TO_METERS
+            print(f"[DEBUG] GPS offset z set to '{gps_z}' meters", flush=True)
+            gps_heading = float(parts[16].strip())
+            print(f"[DEBUG] GPS heading offset set to '{gps_heading}' degrees", flush=True)
+
+            self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
+            self._update_gps(GPSOffset(gps_x, gps_y, gps_z, "meters", gps_heading))
+
+            self._team = team  # Store team for block classification
+
+            robot = Robot(
+                name=name,
+                team=team,
+                size=size,
+                length=length,
+                width=width,
+                start_position=np.array([start_x, start_y], dtype=np.float32),
+                start_orientation=start_orient
+            )
+            game = VexAISkillsGame(robots=[robot])
+            
+            current_folder_path = os.path.dirname(os.path.abspath(__file__))
+            self._model_runner = VexModelRunner(
+                model_path=os.path.join(current_folder_path, "models", name+".pt"),
+                game=game,
+            )
+            self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+            
+        elif rec_header_upper == "ACTION_DONE":
+            # Update model state after action completion, then run inference
+            if rec_body and self._model_runner:
+                action = int(rec_body)
+                self._model_runner.run_action(action)
+            self._send_action()
+            
+        elif rec_header_upper == "START":
+            print("[DEBUG] Received START command", flush=True)
+            self._start_time = time.time()
+            self._total_time = float(rec_body)
+            self._send_action()
+            
+        elif rec_header == "pos":
+            # Update self position
+            try:
+                parts = [p.strip() for p in rec_body.split(',')]
+                if len(parts) >= 3:
+                    self._observation[ObsIndex.SELF_POS_X] = float(parts[0])
+                    self._observation[ObsIndex.SELF_POS_Y] = float(parts[1])
+                    self._observation[ObsIndex.SELF_ORIENT] = float(parts[2])
+            except Exception as e:
+                print(f"Failed to parse pos payload '{rec_body}': {e}")
+            
+        elif rec_header == "pos2":
+            # Update teammate position
+            try:
+                parts = [p.strip() for p in rec_body.split(',')]
+                if len(parts) >= 3:
+                    self._observation[ObsIndex.TEAMMATE_START] = float(parts[0])
+                    self._observation[ObsIndex.TEAMMATE_START + 1] = float(parts[1])
+                    self._observation[ObsIndex.TEAMMATE_START + 2] = float(parts[2])
+            except Exception as e:
+                print(f"Failed to parse pos2 payload '{rec_body}': {e}")
+    
+    def handle_detections(self, detections: list) -> None:
+        """
+        Handle detections callback from camera processing.
+        Updates block positions in the observation.
+        
+        Args:
+            detections: List of Detection objects with classID and mapLocation
+        """
+        # Separate blocks by color
+        friendly_blocks = []
+        opponent_blocks = []
+        
+        robot_x = self._observation[ObsIndex.SELF_POS_X]
+        robot_y = self._observation[ObsIndex.SELF_POS_Y]
+
+        def to_scalar(value):
+            arr = np.asarray(value)
+            if arr.ndim == 0:
+                return float(arr)
+            if arr.size == 0:
+                return np.nan
+            return float(arr.reshape(-1)[0])
+        
+        def clamp(value, min_value, max_value):
+            scalar_value = to_scalar(value)
+            if np.isnan(scalar_value):
+                return scalar_value  # keep NaN as is
+            return max(min_value, min(scalar_value, max_value))
+
+        for det in detections:
+            # Get map position
+            x = clamp(det.mapLocation.x*METERS_TO_INCHES, -72, 72)
+            y = clamp(det.mapLocation.y*METERS_TO_INCHES, -72, 72)
+            z = clamp(det.mapLocation.z*METERS_TO_INCHES, -72, 72)
+            # print(f"[DEBUG] Detection ClassID: {det.classID}, Position: ({x}, {y}, {z})", flush=True)
+
+            if np.isnan(x) or np.isnan(y):
+                continue
+            
+            # Calculate distance from robot for sorting
+            dist = np.sqrt((x - robot_x)**2 + (y - robot_y)**2)
+            
+            # Classify as friendly or opponent based on team
+            is_friendly = False
+            if self._team == Team.RED and det.classID == self.CLASS_RED_BLOCK:
+                is_friendly = True
+            elif self._team == Team.BLUE and det.classID == self.CLASS_BLUE_BLOCK:
+                is_friendly = True
+            
+            block_info = (dist, x, y)
+            if is_friendly:
+                friendly_blocks.append(block_info)
+            else:
+                opponent_blocks.append(block_info)
+        
+        # Sort by distance (closest first)
+        friendly_blocks.sort(key=lambda b: b[0])
+        opponent_blocks.sort(key=lambda b: b[0])
+        
+        # Update counts
+        self._observation[ObsIndex.FRIENDLY_BLOCK_COUNT] = float(len(friendly_blocks))
+        self._observation[ObsIndex.OPPONENT_BLOCK_COUNT] = float(len(opponent_blocks))
+        
+        # Update friendly block positions (up to MAX_TRACKED_BLOCKS)
+        for i in range(self.MAX_TRACKED_BLOCKS):
+            idx = ObsIndex.FRIENDLY_BLOCKS_START + i * 2
+            if i < len(friendly_blocks):
+                self._observation[idx] = float(friendly_blocks[i][1])      # x
+                self._observation[idx + 1] = float(friendly_blocks[i][2])  # y
+            else:
+                # Sentinel value for empty slots
+                self._observation[idx] = -999.0
+                self._observation[idx + 1] = -999.0
+        
+        # Update opponent block positions (up to MAX_TRACKED_BLOCKS)
+        for i in range(self.MAX_TRACKED_BLOCKS):
+            idx = ObsIndex.OPPONENT_BLOCKS_START + i * 2
+            if i < len(opponent_blocks):
+                self._observation[idx] = float(opponent_blocks[i][1])      # x
+                self._observation[idx + 1] = float(opponent_blocks[i][2])  # y
+            else:
+                # Sentinel value for empty slots
+                self._observation[idx] = -999.0
+                self._observation[idx + 1] = -999.0
+    
+    def update_observation(self, index: int, value: float) -> None:
+        """Directly update a specific observation index."""
+        if 0 <= index < ObsIndex.TOTAL:
+            self._observation[index] = value
+
+
 class MainApp:
     def __init__(self):
         # Initialize various components including camera, processing, and rendering
@@ -232,13 +506,19 @@ class MainApp:
         self.camera = Camera()
         self.camera.start()
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
-
-        self.v5 = V5SerialComms()
+        
         self.v5Map = MapPosition()
         self.v5Pos = V5GPS()
         self.v5Web = V5WebData(self.v5Map, self.v5Pos, self.processing)
         self.stats = Statistics(0, 0, 0, 640, 480, 0, False)
         self.rendering = Rendering(self.v5Web)
+
+        # Create the pushback handler for VEXAIRL model management
+        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset)
+
+        self.v5 = V5SerialComms(handler=self.pushback_handler)
+
+        self.pushback_handler.set_write_func(self.v5.write)
 
         time.sleep(1)
         print("Initialized", flush=True)
@@ -263,6 +543,10 @@ class MainApp:
         print("Starting web server...", flush=True)
         self.v5Web.start()
         run_time = time.time()
+
+        # For testing, initialize model directly
+        # self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,0,12,180")
+
         print("\nStarting Loop", flush=True)
         try:
             while True:
@@ -276,6 +560,14 @@ class MainApp:
                 output, detections = self.processing.detect_objects(color_image)
                 invoke_time = time.time() - invoke_time
                 aiRecord = self.processing.compute_detections(self, detections, depth_image)
+                
+                # Update observation with detected block positions
+                self.pushback_handler.handle_detections(aiRecord.detections)
+
+                # # For testing
+                # self.pushback_handler.handle("START", "60")
+                # print("[DEBUG] Detections processed and observation updated.", flush=True)
+                
                 self.set_v5(aiRecord)
                 self.rendering.set_images(output, depth_map)
                 self.rendering.set_detection_data(aiRecord)

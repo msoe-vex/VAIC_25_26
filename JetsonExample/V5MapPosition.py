@@ -71,21 +71,24 @@ class MapPosition:
         CAMERAOFFSETY = self.CAMERAOFFSETY
         CAMERAOFFSETZ = self.CAMERAOFFSETZ
         CAMERAHEADINGOFFSET = self.CAMERAHEADINGOFFSET
-        CAMERAELEVATIONOFFSET = self.CAMERAHEADINGOFFSET
+        CAMERAELEVATIONOFFSET = self.CAMERAELEVATIONOFFSET
 
-        # Create a rotation matrix using azimuth, elevation, and rotation
-        rot = MapPosition.azel2rot(math.radians(position.azimuth - CAMERAHEADINGOFFSET), math.radians(position.elevation - CAMERAELEVATIONOFFSET), math.radians(position.rotation))
+        # Create a rotation matrix using azimuth, elevation, and rotation for the object relative to the camera
+        rotCamera = MapPosition.azel2rot(math.radians(position.azimuth - CAMERAHEADINGOFFSET), math.radians(position.elevation - CAMERAELEVATIONOFFSET), math.radians(position.rotation))
         
+        # Create a rotation matrix using azimuth, elevation, and rotation for the camera offset relative to the robot
+        rotRobot = MapPosition.azel2rot(math.radians(position.azimuth), math.radians(position.elevation), math.radians(position.rotation))
+
         # Compute the object location vector in camera space
         vector = np.zeros(shape=(3, 1))
         vector[0] = depth * (detection.Center[0] - MAXSCREENX) / REALDIST
         vector[1] = depth
         vector[2] = depth * (MAXSCREENY - detection.Center[1]) / REALDIST
 
-        # Rotate the vector to world space
+        # Rotate the vector to world space using the camera's orientation
         # By multiplying the relative position of the object in the screen with the information about the the perspective of the robot
         # the matrix multuplication results in the relative physical position of the object to the robot in 3D space
-        mapLocation = np.matmul(rot, vector)
+        mapLocation = np.matmul(rotCamera, vector)
 
         # Translate to world coordinates, by adding current robot position on the field
         mapLocation[0] += position.x
@@ -94,12 +97,13 @@ class MapPosition:
 
         # Compute and rotate the camera offset to modify the offsets to be aligned with the global coordinate system based on position and heading of robot
         cameraOffset = np.array([[CAMERAOFFSETX], [CAMERAOFFSETY], [CAMERAOFFSETZ]])
-        rotatedCameraOffset = np.matmul(rot, cameraOffset)
+        # Use robot rotation for the offset, as the offset is defined relative to the robot chassis
+        rotatedCameraOffset = np.matmul(rotRobot, cameraOffset)
 
         # Add the adjusted camera offset
         mapLocation[0] += rotatedCameraOffset[0]
         mapLocation[1] += rotatedCameraOffset[1]
-        mapLocation[2] -= rotatedCameraOffset[2]  # Subtract Z offset since the camera is higher than the center of the robot
+        mapLocation[2] += rotatedCameraOffset[2]  # Add Z offset since the camera is higher than the center of the robot
         
         return mapLocation
 

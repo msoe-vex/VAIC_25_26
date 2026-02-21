@@ -45,13 +45,12 @@ const DetectionLayer = ({ fieldWidth, fieldHeight }: DetectionLayerProps) => {
               <>
                 {detection.depth !== -1 ? (
                   <Image
-                    key={`${
-                      config.elements.label.text[detection.class]
-                    }-${uuidv4()}`}
+                    key={`${config.elements.label.text[detection.class]
+                      }-${uuidv4()}`}
                     alt=""
                     image={getImage(detection.class)}
-                    x={detection.mapLocation.x[0] * scale * config.elements.size[detection.class].scale}
-                    y={detection.mapLocation.y[0] * scale * -1 * config.elements.size[detection.class].scale}
+                    x={detection.mapLocation.x[0] * scale}
+                    y={detection.mapLocation.y[0] * scale * -1}
                     z={detection.depth}
                     width={widthScale}
                     height={heightScale}

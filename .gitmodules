@@ -1,0 +1,4 @@
+[submodule "VEXAIRL"]
+	path = VEXAIRL
+	url = https://github.com/msoe-vex/VEX-AI-Reinforcement-Learning.git
+	branch = pushback-test

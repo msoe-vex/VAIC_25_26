@@ -1,0 +1,72 @@
+graph TD
+    %% --- Nodes ---
+    subgraph VEX_System [V5 Hardware Ecosystem]
+        Brain("V5 Brain")
+        Battery("V5 Battery")
+        Radio1("V5 Radio")
+        Radio2("V5 Radio")
+        Motors("V5 Smart Motors")
+        Sensors("V5 Sensors")
+        ThreeWire("V5 3-Wire Devices")
+        GPS("VEX GPS Sensor")
+    end
+
+    subgraph External [Wireless & Field Control]
+        Robot2("Second VEX AI Robot")
+        Controller("V5 Controller")
+        FCS("Field Control System")
+    end
+
+    subgraph Jetson_System [NVIDIA Jetson Ecosystem]
+        Nano("NVIDIA Jetson Nano<br/>+ Cooling Fan")
+        Camera("Intel RealSense<br/>Depth Camera")
+        SD("MicroSD Card")
+        Wifi("Intel Wi-Fi Module")
+        Ant1("Wi-Fi Antenna")
+        Ant2("Wi-Fi Antenna")
+    end
+
+    %% --- Connections ---
+
+    %% 1. V5 Battery Cable (Pink)
+    Battery ---|V5 Battery Cable| Brain
+    linkStyle 0 stroke:#ce7eac,stroke-width:3px;
+
+    %% 2. Power to Nano from Brain (Red)
+    Brain -->|VEX 3-Wire Connector to<br/>Barrel Plug Cable| Nano
+    linkStyle 1 stroke:#c00000,stroke-width:3px;
+
+    %% 3. V5 Smart Cables (Black) - Brain Connections
+    Brain ---|V5 Smart Cable| Radio1
+    Brain ---|V5 Smart Cable| Radio2
+    Brain ---|V5 Smart Cables| Motors
+    Brain ---|V5 Smart Cables| Sensors
+    Brain ---|V5 Smart Cable| GPS
+    linkStyle 2,3,4,5,6 stroke:#000000,stroke-width:3px;
+
+    %% 4. 3-Wire Devices (Red)
+    Brain ---|3-Wire Cables| ThreeWire
+    linkStyle 7 stroke:#c00000,stroke-width:3px;
+
+    %% 5. USB Connections (Blue)
+    Brain ---|Micro USB Cable| Nano
+    GPS ---|USB C Cable| Nano
+    Nano ---|Intel USB-C Cable| Camera
+    linkStyle 8,9,10 stroke:#4472c4,stroke-width:3px;
+
+    %% 6. Wireless/Field Connections (Dotted/Black)
+    Radio1 -.-|VEXlink Wireless<br/>Connection| Robot2
+    Radio2 -.-|VEXnet Wireless<br/>Connection| Controller
+    Controller ---|V5 Smart Cable or<br/>Competition Cable| FCS
+    linkStyle 11,12 stroke:#000000,stroke-width:2px,stroke-dasharray: 5 5;
+    linkStyle 13 stroke:#000000,stroke-width:2px;
+
+    %% 7. Direct Installation (Gold/Brown)
+    Nano ---|Installed via<br/>MicroSD Slot| SD
+    Nano ---|Installed via<br/>M.2 Slot| Wifi
+    linkStyle 14,15 stroke:#bf9000,stroke-width:3px;
+
+    %% 8. Antenna Cables (Green)
+    Wifi ---|I-PEX MH4<br/>Connectors| Ant1
+    Wifi ---|I-PEX MH4<br/>Connectors| Ant2
+    linkStyle 16,17 stroke:#548235,stroke-width:3px;

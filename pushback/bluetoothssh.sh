@@ -2,17 +2,18 @@
 # bluetoothpan-setup-full.sh
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
-# --- FINAL HYBRID STRATEGY ---
+# --- FINAL HYBRID STRATEGY (BOOT-PROOF VERSION) ---
 # 1. USES 'bt-network' (bt-pan.service) because internal BlueZ bridging is failing.
 # 2. DISABLES internal 'network' plugin to prevent conflicts.
 # 3. FIXES PAIRING by running a persistent Agent and re-applying controller
 #    settings AFTER bt-network starts.
+# 4. FIXES BOOT RACE CONDITIONS via proper ordering and bind-dynamic.
 #
 set -euo pipefail
 SLEEP_SHORT=1
 
 echo
-echo "=== ISOLATED Bluetooth PAN (NAP) Setup (HYBRID) ==="
+echo "=== ISOLATED Bluetooth PAN (NAP) Setup (HYBRID - BOOT FIX) ==="
 echo
 
 # --- 0. Basic variables ---
@@ -38,42 +39,62 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   sudo apt-get install -y "${MISSING[@]}"
 fi
 
-# --- 2. Create / configure br0 via NetworkManager ---
-echo "Configuring bridge ${BRIDGE_IF} (NetworkManager)..."
-sudo nmcli con delete ${BRIDGE_IF} 2>/dev/null || true
-sudo ip link delete ${BRIDGE_IF} 2>/dev/null || true || true
-
-# create the bridge and set IP
-sudo nmcli con add type bridge ifname ${BRIDGE_IF} con-name ${BRIDGE_IF} >/dev/null
-sudo nmcli con modify ${BRIDGE_IF} ipv4.method manual ipv4.addresses ${PAN_IP}
-sudo nmcli con modify ${BRIDGE_IF} bridge.stp no
-sudo nmcli con modify ${BRIDGE_IF} bridge.forward-delay 0
-sudo nmcli con up ${BRIDGE_IF}
-
-sudo ip link set dev ${BRIDGE_IF} type bridge ageing_time 0 2>/dev/null || true
-
-sleep $SLEEP_SHORT
-
-# --- 3. Tell NetworkManager to ignore bnep* ---
+# --- 2. Tell NetworkManager to ignore bnep* (MOVED UP) ---
+# We do this FIRST so we don't have to restart NM *after* creating the bridge.
 echo "Configuring NetworkManager to ignore bnep* devices..."
 sudo tee /etc/NetworkManager/conf.d/99-unmanaged-bnep.conf > /dev/null <<'NMEOF'
 [keyfile]
 unmanaged-devices=interface-name:bnep*
 NMEOF
 
+# Restart NM now to apply the ignore rule, before we build the bridge
 sudo systemctl restart NetworkManager
+sleep $SLEEP_SHORT
+
+# --- 3. Create / configure br0 via NetworkManager ---
+echo "Configuring bridge ${BRIDGE_IF} (NetworkManager)..."
+sudo nmcli con delete ${BRIDGE_IF} 2>/dev/null || true
+sudo ip link delete ${BRIDGE_IF} 2>/dev/null || true || true
+
+# Create the bridge and set IP
+sudo nmcli con add type bridge ifname ${BRIDGE_IF} con-name ${BRIDGE_IF} >/dev/null
+sudo nmcli con modify ${BRIDGE_IF} ipv4.method manual ipv4.addresses ${PAN_IP}
+sudo nmcli con modify ${BRIDGE_IF} bridge.stp no
+sudo nmcli con modify ${BRIDGE_IF} bridge.forward-delay 0
+# Ensure autoconnect is ON for boot reliability
+sudo nmcli con modify ${BRIDGE_IF} connection.autoconnect yes
+sudo nmcli con up ${BRIDGE_IF}
+
+sudo ip link set dev ${BRIDGE_IF} type bridge ageing_time 0 2>/dev/null || true
 sleep $SLEEP_SHORT
 
 # --- 4. Configure dnsmasq for br0 ---
 echo "Writing dnsmasq config for ${BRIDGE_IF}..."
 sudo tee /etc/dnsmasq.d/bt-pan.conf > /dev/null <<DNSMASQ_EOF
 interface=${BRIDGE_IF}
-bind-interfaces
+# CRITICAL FIX: bind-dynamic prevents crash if IP is slow to appear on boot
+bind-dynamic
 dhcp-range=${DHCP_RANGE_START},${DHCP_RANGE_END},${DHCP_LEASE}
 dhcp-option=option:router,${PAN_IP_ADDR}
 dhcp-option=option:dns-server,${PAN_IP_ADDR}
 listen-address=127.0.0.1,${PAN_IP_ADDR}
+address=/msoe-nano/${PAN_IP_ADDR}
+address=/msoe-nano1/${PAN_IP_ADDR}
+address=/msoe-nano2/${PAN_IP_ADDR}
+address=/msoe-nano.local/${PAN_IP_ADDR}
+address=/msoe-nano1.local/${PAN_IP_ADDR}
+address=/msoe-nano2.local/${PAN_IP_ADDR}
 DNSMASQ_EOF
+
+# Add systemd override to wait for network
+echo "Adding systemd override to wait for network..."
+sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+sudo tee /etc/systemd/system/dnsmasq.service.d/override.conf > /dev/null <<'SYS_EOF'
+[Unit]
+After=network-online.target
+Wants=network-online.target
+SYS_EOF
+sudo systemctl daemon-reload
 
 sudo systemctl enable dnsmasq.service
 sudo systemctl restart dnsmasq.service
@@ -123,7 +144,6 @@ echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /de
 sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
 
 # --- 8. *** RESTORED *** bt-pan.service (bt-network) ---
-# We use this because internal BlueZ bridging was failing.
 echo "Installing bt-pan.service (bt-network)..."
 sudo tee /etc/systemd/system/bt-pan.service > /dev/null <<PAN_SERVICE_EOF
 [Unit]
@@ -171,7 +191,8 @@ sudo systemctl enable --now bt-agent.service
 echo "Installing controller helper (/usr/local/bin/bt-pan-config.sh)..."
 sudo tee /usr/local/bin/bt-pan-config.sh > /dev/null <<'BTCONF_EOF'
 #!/bin/bash
-sleep 2
+# FIX: Increased sleep to 10s to ensure hardware is ready on cold boot
+sleep 10
 # 1. Force Controller Settings
 /usr/bin/hciconfig hci0 up || true
 /usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
@@ -258,6 +279,7 @@ sudo chmod +x /usr/local/bin/bt-pan-debug
 
 echo "======================================="
 echo "ISOLATED Bluetooth PAN (NAP) setup complete"
+echo " - BOOT FIXES APPLIED"
 echo " - Run: sudo bt-pan-debug to check status"
 echo "======================================="
 echo

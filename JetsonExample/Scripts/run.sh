@@ -10,8 +10,8 @@ PYTHON_PROGRAM="$PYTHON_DIR/pushback.py"
 # Navigate to the desired directory
 cd "$SCRIPT_DIR/../../JetsonWebDashboard/vexai-web-dashboard-react"
 
-# Serve the build directory in the background
-serve -s build &
+# Serve the build directory in the background (use node to run serve module directly)
+node /usr/local/lib/node_modules/serve/build/main.js -s build &
 
 # Set the required environment variables
 export PATH=$HOME/.pyenv/shims:/usr/local/cuda/bin${PATH:+:${PATH}}

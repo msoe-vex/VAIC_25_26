@@ -20,8 +20,8 @@ const Robot = () => {
         <Image
           alt=""
           image={robot}
-          x={position.x * scale * config.field.robot.scale}
-          y={position.y * scale * -1 * config.field.robot.scale}
+          x={position.x * scale}
+          y={position.y * scale * -1}
           rotation={position.azimuth}
           width={config.field.robot.width * scale * config.field.robot.scale}
           height={config.field.robot.length * scale * config.field.robot.scale}
