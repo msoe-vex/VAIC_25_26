@@ -200,7 +200,7 @@ class V5SerialComms:
                     # self.devices = [dev for dev in comports()]
                     # print(self.devices)
                     if(len(devices) == 0 and count <= 5):
-                        print("No V5 Brain detected.")
+                        print("No V5 Brain detected.", flush=True)
                         time.sleep(1)  # Wait for 1 second before retrying
                         count += 1
                         continue
@@ -233,13 +233,13 @@ class V5SerialComms:
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
             except serial.SerialException as e:
-                print("Could not connect to ", port, ". Exception: ", e)
+                print("Could not connect to ", port, ". Exception: ", e, flush=True)
                 time.sleep(1)    # Wait for 1 second before retrying
         
             if(self.__ser.isOpen()):
                 self.__ser.close()    # Close the serial port if open
 
-        print("V5SerialComms thread stopped.")
+        print("V5SerialComms thread stopped.", flush=True)
 
     def setDetectionData(self, data: AIRecord):
         # Aquire lock and set detection data
@@ -254,4 +254,4 @@ class V5SerialComms:
 
     def __del__(self):
         # Destructor to call the stop method when the object is deleted
-        self.stop
+        self.stop()
