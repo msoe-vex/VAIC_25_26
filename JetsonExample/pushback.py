@@ -534,7 +534,7 @@ class MainApp:
         run_time = time.time()
 
         # For testing, initialize model directly
-        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,0,12,180")
+        # self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,0,12,180")
 
         print("\nStarting Loop", flush=True)
         try:
