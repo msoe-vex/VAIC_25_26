@@ -300,7 +300,7 @@ class PushbackHandler:
         print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
         # Format: action_id\ncommand1\ncommand2\n...
         send_header = "RUN_ACTION"
-        send_body = str(action) + "\n" + "\n".join(split_actions)
+        send_body = str(action) + "/" + "/".join(split_actions)
         self._write(send_header, send_body)
 
         print(f"[DEBUG] Sent action {action} with commands: {split_actions}", flush=True)
