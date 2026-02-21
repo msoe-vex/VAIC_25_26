@@ -431,7 +431,7 @@ class PushbackHandler:
             x = clamp(det.mapLocation.x*METERS_TO_INCHES, -72, 72)
             y = clamp(det.mapLocation.y*METERS_TO_INCHES, -72, 72)
             z = clamp(det.mapLocation.z*METERS_TO_INCHES, -72, 72)
-            print(f"[DEBUG] Detection ClassID: {det.classID}, Position: ({x}, {y}, {z})", flush=True)
+            # print(f"[DEBUG] Detection ClassID: {det.classID}, Position: ({x}, {y}, {z})", flush=True)
 
             if np.isnan(x) or np.isnan(y):
                 continue
@@ -553,9 +553,9 @@ class MainApp:
                 # Update observation with detected block positions
                 self.pushback_handler.handle_detections(aiRecord.detections)
 
-                # For testing
-                self.pushback_handler.handle("START", "60")
-                print("[DEBUG] Detections processed and observation updated.", flush=True)
+                # # For testing
+                # self.pushback_handler.handle("START", "60")
+                # print("[DEBUG] Detections processed and observation updated.", flush=True)
                 
                 self.set_v5(aiRecord)
                 self.rendering.set_images(output, depth_map)
