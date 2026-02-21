@@ -210,7 +210,7 @@ class V5SerialComms:
                     else:
                         port = devices[0].device  # Return None if no devices found after 3 tries
                     
-                print("Connecting to ", port)
+                print(f"Connecting to {port}", flush=True)
 
                 # Establish serial connection with the port
                 self.__ser = serial.Serial(port, 115200, timeout=10)
