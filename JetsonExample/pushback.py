@@ -274,6 +274,7 @@ class PushbackHandler:
         self._total_time: float = None
         self._update_camera = update_camera_func
         self._update_gps = update_gps_func
+        self._last_message: np.ndarray = None  # Latest message vector from model
         
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
@@ -296,7 +297,8 @@ class PushbackHandler:
         if self._start_time is not None and self._total_time is not None:
             self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
 
-        action, split_actions = self._model_runner.get_inference(self._observation)
+        action, split_actions, message_vector = self._model_runner.get_inference(self._observation)
+        self._last_message = message_vector
         print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
         # Format: action_id\ncommand1\ncommand2\n...
         send_header = "RUN_ACTION"
@@ -397,16 +399,14 @@ class PushbackHandler:
             except Exception as e:
                 print(f"Failed to parse pos payload '{rec_body}': {e}")
             
-        elif rec_header == "pos2":
-            # Update teammate position
+        elif rec_header_upper == "MESSAGE":
+            # Update received message in observation from teammate
             try:
-                parts = [p.strip() for p in rec_body.split(',')]
-                if len(parts) >= 3:
-                    self._observation[ObsIndex.TEAMMATE_START] = float(parts[0])
-                    self._observation[ObsIndex.TEAMMATE_START + 1] = float(parts[1])
-                    self._observation[ObsIndex.TEAMMATE_START + 2] = float(parts[2])
+                parts = [float(p.strip()) for p in rec_body.split(',')]
+                for i in range(min(len(parts), 8)):
+                    self._observation[ObsIndex.RECEIVED_MSG_START + i] = parts[i]
             except Exception as e:
-                print(f"Failed to parse pos2 payload '{rec_body}': {e}")
+                print(f"Failed to parse MESSAGE payload '{rec_body}': {e}")
     
     def handle_detections(self, detections: list) -> None:
         """
@@ -497,6 +497,12 @@ class PushbackHandler:
         """Directly update a specific observation index."""
         if 0 <= index < ObsIndex.TOTAL:
             self._observation[index] = value
+    
+    def get_message_string(self) -> str:
+        """Get the latest message vector as a comma-separated string for sending over USB."""
+        if self._last_message is None:
+            return None
+        return ",".join(f"{v:.6f}" for v in self._last_message)
 
 
 class MainApp:
@@ -548,6 +554,7 @@ class MainApp:
         # self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,0,12,180")
 
         print("\nStarting Loop", flush=True)
+        last_message_time = time.time()
         try:
             while True:
                 start_time = time.time()  # start time of the loop
@@ -563,6 +570,14 @@ class MainApp:
                 
                 # Update observation with detected block positions
                 self.pushback_handler.handle_detections(aiRecord.detections)
+
+                # Send MESSAGE periodically (every 100ms)
+                now = time.time()
+                if now - last_message_time >= 0.1:
+                    msg_str = self.pushback_handler.get_message_string()
+                    if msg_str is not None:
+                        self.v5.write("MESSAGE", msg_str)
+                    last_message_time = now
 
                 # # For testing
                 # self.pushback_handler.handle("START", "60")
