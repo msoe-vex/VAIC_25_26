@@ -369,7 +369,11 @@ class PushbackHandler:
                 start_position=np.array([start_x, start_y], dtype=np.float32),
                 start_orientation=start_orient
             )
-            game = VexAISkillsGame(robots=[robot])
+            game = VexAISkillsGame(
+                robots=[robot],
+                enable_communication=True,
+                deterministic=False
+            )
             
             current_folder_path = os.path.dirname(os.path.abspath(__file__))
             self._model_runner = VexModelRunner(
