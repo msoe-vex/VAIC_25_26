@@ -556,7 +556,7 @@ class MainApp:
         run_time = time.time()
 
         # For testing, initialize model directly
-        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,65,24,270,-6.5,-3.75,14.25,270,-10,-6.5,1.5,10,270")
+        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,65,24,270,-6.5,-3.75,14.25,0,-10,-6.5,1.5,10,270")
 
         print("\nStarting Loop", flush=True)
         last_message_time = time.time()
