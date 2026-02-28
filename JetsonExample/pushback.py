@@ -311,10 +311,8 @@ class PushbackHandler:
         """Handle incoming USB message from V5Comm."""
         rec_header_upper = rec_header.upper()
 
-        if (rec_header in ['vl','vr','lv','rv','lt','rt']):
-            return # Skip
-
-        print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
+        if (rec_header_upper not in ['VL','VR','LV','RV','LT','RT', 'POS']):
+            print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
         
         if rec_header_upper == "INIT":
             parts = rec_body.split(',')
@@ -395,7 +393,7 @@ class PushbackHandler:
             self._total_time = float(rec_body)
             self._send_action()
             
-        elif rec_header == "pos":
+        elif rec_header_upper == "POS":
             # Update self position
             try:
                 parts = [p.strip() for p in rec_body.split(',')]
@@ -558,7 +556,7 @@ class MainApp:
         run_time = time.time()
 
         # For testing, initialize model directly
-        # self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,0,0,0,0,0,12,0,0,0,0,12,180")
+        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,65,24,270,-6.5,-3.75,14.25,90,-10,-6.5,1.5,10,90")
 
         print("\nStarting Loop", flush=True)
         last_message_time = time.time()
