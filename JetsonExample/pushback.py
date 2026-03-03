@@ -265,7 +265,7 @@ class PushbackHandler:
     
     MAX_TRACKED_BLOCKS = 15
     
-    def __init__(self, write_func, update_camera_func, update_gps_func):
+    def __init__(self, write_func, update_camera_func, update_gps_func, v5gps):
         self._model_runner: VexModelRunner = None
         self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
         self._write = write_func
@@ -275,7 +275,11 @@ class PushbackHandler:
         self._update_camera = update_camera_func
         self._update_gps = update_gps_func
         self._last_message: np.ndarray = None  # Latest message vector from model
-        
+        self._x = None
+        self._y = None
+        self._orient = None
+        self.v5gps = v5gps
+                
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
         self._write = write_func
@@ -401,6 +405,15 @@ class PushbackHandler:
                     self._observation[ObsIndex.SELF_POS_X] = float(parts[0])
                     self._observation[ObsIndex.SELF_POS_Y] = float(parts[1])
                     self._observation[ObsIndex.SELF_ORIENT] = float(parts[2])
+                    self._x = float(parts[0])
+                    self._y = float(parts[1])  
+                    self._orient = float(parts[2])
+
+                    self.v5gps.__positionLock.acquire()
+                    self.v5gps.__position.x = self._x
+                    self.v5gps.__position.y = self._y
+                    self.v5gps.__position.rotation = self._orient
+                    self.v5gps.__positionLock.release()
             except Exception as e:
                 print(f"Failed to parse pos payload '{rec_body}': {e}")
             
@@ -519,13 +532,13 @@ class MainApp:
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
         
         self.v5Map = MapPosition()
-        self.v5Pos = V5GPS()
+        self.v5Pos = V5GPS(self.v5Pos)
         self.v5Web = V5WebData(self.v5Map, self.v5Pos, self.processing)
         self.stats = Statistics(0, 0, 0, 640, 480, 0, False)
         self.rendering = Rendering(self.v5Web)
 
         # Create the pushback handler for VEXAIRL model management
-        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset)
+        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset, self.v5Pos)
 
         self.v5 = V5SerialComms(handler=self.pushback_handler)
 

@@ -6,6 +6,7 @@ import time
 import math
 from filter import LiveFilter
 import numpy as np 
+import pushback
 
 class Position:
     # Status flags for different conditions
@@ -55,7 +56,7 @@ class V5GPS:
     __MAP_PACKET_TYPE = 0x0001
 
 
-    def __init__(self, port = None):
+    def __init__(self, port = None, ):
         # Initialization of GPS attributes including port, position, and offsets
         self.__dev = port
         self.__started = False
@@ -146,12 +147,12 @@ class V5GPS:
                         if(status == 20):
                             x, y = self.__filter.update(x, y)
                             self.__positionLock.acquire()
-                            self.__position.x = x
-                            self.__position.y = y
+                            #self.__position.x = pushback._x
+                            #self.__position.y = pushback._y
                             self.__position.z = z
                             self.__position.azimuth = az
                             self.__position.elevation = el
-                            self.__position.rotation = rot
+                            #self.__position.rotation = pushback._orient
                             self.__position.status = localStatus
                             self.__position.frameCount = self.__frameCount
                             self.__positionLock.release()
