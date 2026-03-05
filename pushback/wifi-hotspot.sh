@@ -1,61 +1,49 @@
 #!/bin/bash
 # wifi-hotspot.sh
-# 1. Installs RTL8811AU driver (88XXau) using manual DKMS steps
-# 2. Configures WiFi-to-WiFi Bridge
 
 set -euo pipefail
 
 # --- CONFIG ---
-SOURCE_IF="wlP1p1s0"      # Internal Realtek (Internet Source)
+SOURCE_IF="wlP1p1s0"
 HOTSPOT_SSID="Jetson_Orin_AP"
 HOTSPOT_PASS="msoe_password"
 DRIVER_REPO="https://github.com/aircrack-ng/rtl8812au.git"
-VER="5.6.4.2"             # Target version for DKMS
-MODULE_NAME="88XXau"      # Confirmed kernel module name
+VER="5.6.4.2"
+MODULE_NAME="88XXau"      # The name the kernel uses
+DKMS_NAME="8812au"        # The name the DKMS system uses
 
 echo "=== System Check ==="
 
-# 1. Driver Installation Logic
+# 1. Driver Installation/Loading Logic
 if ! lsmod | grep -q "$MODULE_NAME"; then
-    echo "Driver $MODULE_NAME not loaded. Checking installation..."
+    echo "Driver $MODULE_NAME not loaded. Checking DKMS..."
     
-    # Check if the driver is already installed in DKMS but just not loaded
-    if ! dkms status | grep -q "$MODULE_NAME"; then
-        echo "Starting manual DKMS installation..."
+    # Check if ALREADY in DKMS (using the correct DKMS name)
+    if ! dkms status | grep -q "$DKMS_NAME"; then
+        echo "Not in DKMS. Starting manual installation..."
         
-        # Ensure we have internet to download tools/repo
         if ! ping -c 1 -W 2 google.com > /dev/null; then
-            echo "ERROR: No internet connection on $SOURCE_IF. Please connect to WiFi first."
+            echo "ERROR: No internet connection on $SOURCE_IF."
             exit 1
         fi
 
-        sudo apt update
-        sudo apt install -y git dkms build-essential bc
-
-        # Clone the repo if it doesn't exist
-        if [ ! -d "rtl8812au" ]; then
-            git clone "$DRIVER_REPO"
-        fi
+        sudo apt update && sudo apt install -y git dkms build-essential bc
+        [ ! -d "rtl8812au" ] && git clone "$DRIVER_REPO"
         
         cd rtl8812au
-        
-        echo "Preparing DKMS source directory..."
-        sudo mkdir -p /usr/src/8812au-${VER}
-        sudo cp -r . /usr/src/8812au-${VER}
-
-        echo "Adding, Building, and Installing driver (This takes 5-10 mins)..."
-        # We use 8812au for the DKMS registration name, but the MODULE is 88XXau
-        sudo dkms add -m 8812au -v ${VER} || true
-        sudo dkms build -m 8812au -v ${VER}
-        sudo dkms install -m 8812au -v ${VER}
+        sudo mkdir -p /usr/src/${DKMS_NAME}-${VER}
+        sudo cp -r . /usr/src/${DKMS_NAME}-${VER}
+        sudo dkms add -m $DKMS_NAME -v ${VER} || true
+        sudo dkms build -m $DKMS_NAME -v ${VER}
+        sudo dkms install -m $DKMS_NAME -v ${VER}
         cd ..
+    else
+        echo "Driver already in DKMS tree. Skipping build."
     fi
     
     echo "Updating module dependencies and probing $MODULE_NAME..."
     sudo depmod -a
     sudo modprobe "$MODULE_NAME"
-    echo "Driver $MODULE_NAME installed and loaded successfully."
-    sleep 3
 else
     echo "Driver $MODULE_NAME is already installed and loaded."
 fi
@@ -63,18 +51,22 @@ fi
 echo "=== Driver Check Complete ==="
 
 # 2. Identify the Hotspot Interface
-# Finds any wlan/wlxf interface that is NOT the internal PCIe card
-HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlxf' | grep -v "$SOURCE_IF" | head -n 1)
+# Using a loop to wait for hardware registration
+echo "Waiting for hardware to register..."
+for i in {1..5}; do
+    HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlxf' | grep -v "$SOURCE_IF" | head -n 1)
+    [ -n "$HOTSPOT_IF" ] && break
+    sleep 1
+done
 
 if [ -z "$HOTSPOT_IF" ]; then
-    echo "ERROR: USB Hotspot interface not found. Try replugging the TP-Link adapter."
+    echo "ERROR: USB interface not found. Try replugging the TP-Link adapter."
     exit 1
 fi
 
 echo "Using $HOTSPOT_IF for Access Point."
 
-# 3. Network Configuration (IP Forwarding)
-echo "Enabling IP Forwarding..."
+# 3. Network Configuration
 sudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/90-hotspot-forwarding.conf > /dev/null
 
@@ -91,7 +83,7 @@ sudo nmcli con modify Hotspot ipv4.method shared ipv4.addresses "192.168.150.1/2
 echo "Activating Hotspot..."
 sudo nmcli con up Hotspot
 
-# 6. IPTables NAT (The Bridge)
+# 6. IPTables NAT
 echo "Applying NAT rules..."
 sudo iptables -t nat -F POSTROUTING
 sudo iptables -t nat -A POSTROUTING -o "$SOURCE_IF" -j MASQUERADE
