@@ -139,9 +139,9 @@ sudo systemctl restart bluetooth.service
 sleep $SLEEP_SHORT
 
 # --- 7. Disable kernel IP forwarding (ISOLATED) ---
-echo "Disabling IP forwarding..."
-echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
-sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
+echo "Enabling IP forwarding for WiFi and Bluetooth..."
+echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/90-forwarding.conf > /dev/null
+sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null || true
 
 # --- 8. *** RESTORED *** bt-pan.service (bt-network) ---
 echo "Installing bt-pan.service (bt-network)..."
