@@ -77,6 +77,8 @@ sudo nmcli con modify "Hotspot" 802-11-wireless.mode ap 802-11-wireless.band bg
 sudo nmcli con modify "Hotspot" 802-11-wireless-security.key-mgmt wpa-psk
 sudo nmcli con modify "Hotspot" 802-11-wireless-security.psk "$HOTSPOT_PASS"
 sudo nmcli con modify "Hotspot" ipv4.method shared ipv4.addresses "192.168.150.1/24"
+sudo nmcli con modify "Hotspot" ipv4.dns "8.8.8.8,1.1.1.1"
+sudo nmcli con modify "Hotspot" ipv4.ignore-auto-dns yes
 
 # 6. Activation
 sudo nmcli device set "$HOTSPOT_IF" managed yes || true
