@@ -54,10 +54,13 @@ if ! lsmod | grep -q "$MODULE_NAME"; then
     echo "Updating module dependencies and probing $MODULE_NAME..."
     sudo depmod -a
     sudo modprobe "$MODULE_NAME"
+    echo "Driver $MODULE_NAME installed and loaded successfully."
     sleep 3
 else
     echo "Driver $MODULE_NAME is already installed and loaded."
 fi
+
+echo "=== Driver Check Complete ==="
 
 # 2. Identify the Hotspot Interface
 # Finds any wlan/wlxf interface that is NOT the internal PCIe card
