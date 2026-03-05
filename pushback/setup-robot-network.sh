@@ -71,23 +71,35 @@ AutoEnable = true
 DisablePlugins = network
 EOF
 
-# --- 5. CREATE THE MASTER RUNTIME SCRIPT ---
-# This is the script the system calls every time it boots
+# --- 5. CREATE THE MASTER RUNTIME SCRIPT (FIXED) ---
 echo "[4/6] Creating master runtime script at /usr/local/bin/robot-bridge-up.sh..."
 sudo tee /usr/local/bin/robot-bridge-up.sh > /dev/null <<EOF
 #!/bin/bash
-# Find Internet Source
-SRC=\$(ip route show default | awk '/default/ {print \$5}' | head -n 1)
-SRC=\${SRC:-"wlP1p1s0"}
-
-# Find WiFi Stick
-WIFI_IF=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -E '^wlan|^wlx' | grep -v "\$SRC" | head -n 1)
-
-# Enable Forwarding
+# A. Enable Forwarding
 sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/90-robot-forwarding.conf
 
-# WiFi Hotspot Cleanup & Start
+# B. HARDWARE KICKSTART (CRITICAL FIX)
+# Wait for hardware to settle
+sleep 5
+hciconfig hci0 up || true
+hciconfig hci0 class 0x020300 || true
+sdptool add NAP || true
+
+# Force bluetoothctl settings
+bluetoothctl <<BTCTL
+power on
+discoverable on
+pairable on
+exit
+BTCTL
+
+# C. Find Interfaces
+SRC=\$(ip route show default | awk '/default/ {print \$5}' | head -n 1)
+SRC=\${SRC:-"wlP1p1s0"}
+WIFI_IF=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -E '^wlan|^wlx' | grep -v "\$SRC" | head -n 1)
+
+# D. WiFi Hotspot Cleanup & Start
 mapfile -t ALL_CONS < <(nmcli -g NAME connection show)
 for con in "\${ALL_CONS[@]}"; do
     IS_AP=\$(nmcli -g 802-11-wireless.mode connection show "\$con" 2>/dev/null || echo "client")
@@ -100,13 +112,13 @@ if [ -n "\$WIFI_IF" ]; then
     nmcli con up "Hotspot"
 fi
 
-# Bluetooth Bridge Setup
+# E. Bluetooth Bridge Setup
 nmcli con delete $BRIDGE_IF 2>/dev/null || true
 nmcli con add type bridge ifname $BRIDGE_IF con-name $BRIDGE_IF >/dev/null
 nmcli con modify $BRIDGE_IF ipv4.method manual ipv4.addresses $PAN_IP
 nmcli con up $BRIDGE_IF
 
-# Routing & DNS Hijack (The Windows Fix)
+# F. Routing & DNS Hijack (The Windows Fix)
 iptables -t nat -F POSTROUTING
 iptables -t nat -A POSTROUTING -o "\$SRC" -j MASQUERADE
 [ -n "\$WIFI_IF" ] && iptables -t nat -A PREROUTING -i "\$WIFI_IF" -p udp --dport 53 -j DNAT --to-destination 8.8.8.8
