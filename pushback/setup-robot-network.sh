@@ -19,7 +19,7 @@ BRIDGE_IF="br0"
 # --- 2. INSTALL DEPENDENCIES ---
 echo "[1/6] Installing required packages..."
 sudo apt update
-sudo apt install -y bluez bluez-tools dnsmasq bridge-utils git dkms build-essential bc nmcli
+sudo apt install -y bluez bluez-tools dnsmasq bridge-utils git dkms build-essential bc network-manager
 
 # --- 3. CREATE THE BACKGROUND SERVICES (BOOT PERSISTENCE) ---
 echo "[2/6] Writing system services for boot persistence..."
