@@ -1,22 +1,22 @@
 #!/bin/bash
-# install-and-hostspot.sh
-# 1. Installs RTL8811AU driver if missing
+# wifi-hotspot.sh
+# 1. Installs RTL8811AU driver using manual DKMS steps
 # 2. Configures WiFi-to-WiFi Bridge
 
 set -euo pipefail
 
 # --- CONFIG ---
-SOURCE_IF="wlP1p1s0"      # Internal (Internet)
-HOTSPOT_IF="wlan0"        # USB (To be created)
+SOURCE_IF="wlP1p1s0"      # Internal Realtek (Internet Source)
 HOTSPOT_SSID="Jetson_Orin_AP"
 HOTSPOT_PASS="msoe_password"
 DRIVER_REPO="https://github.com/aircrack-ng/rtl8812au.git"
+VER="5.6.4.2"             # Target version for DKMS
 
 echo "=== System Check ==="
 
-# 1. Check for Driver
+# 1. Driver Installation Logic
 if ! lsmod | grep -q "8812au"; then
-    echo "Driver 8812au not loaded. Starting installation..."
+    echo "Driver 8812au not loaded. Starting manual DKMS installation..."
     
     # Ensure we have internet
     if ! ping -c 1 -W 2 google.com > /dev/null; then
@@ -26,16 +26,26 @@ if ! lsmod | grep -q "8812au"; then
 
     sudo apt update
     sudo apt install -y git dkms build-essential bc
-    
-    # Clone and install
+
+    # Clone the repo if it doesn't exist
     if [ ! -d "rtl8812au" ]; then
         git clone "$DRIVER_REPO"
     fi
+    
     cd rtl8812au
-    sudo ./dkms-install.sh
+    
+    echo "Preparing DKMS source directory..."
+    sudo mkdir -p /usr/src/8812au-${VER}
+    sudo cp -r . /usr/src/8812au-${VER}
+
+    echo "Adding, Building, and Installing driver (This will take 5-10 mins)..."
+    sudo dkms add -m 8812au -v ${VER} || true
+    sudo dkms build -m 8812au -v ${VER}
+    sudo dkms install -m 8812au -v ${VER}
+    
     cd ..
     
-    echo "Driver installed. Probing module..."
+    echo "Probing module..."
     sudo modprobe 8812au
     sleep 3
 else
@@ -43,17 +53,18 @@ else
 fi
 
 # 2. Identify the Hotspot Interface
-# The USB stick usually becomes wlan0 or wlan1 once the driver loads
+# Finds any wlan/wlxf interface that is NOT the internal PCIe card
 HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlxf' | grep -v "$SOURCE_IF" | head -n 1)
 
 if [ -z "$HOTSPOT_IF" ]; then
-    echo "ERROR: USB Hotspot interface not found even after driver install."
+    echo "ERROR: USB Hotspot interface not found after driver probe. Check dmesg."
     exit 1
 fi
 
 echo "Using $HOTSPOT_IF for Access Point."
 
-# 3. Enable IP Forwarding
+# 3. Network Configuration (IP Forwarding)
+echo "Enabling IP Forwarding..."
 sudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/90-hotspot-forwarding.conf > /dev/null
 
@@ -66,10 +77,14 @@ sudo nmcli con modify Hotspot 802-11-wireless-security.key-mgmt wpa-psk
 sudo nmcli con modify Hotspot 802-11-wireless-security.psk "$HOTSPOT_PASS"
 sudo nmcli con modify Hotspot ipv4.method shared ipv4.addresses "192.168.150.1/24"
 
-# 5. Fire it up
+# 5. Bring Hotspot Up
+echo "Activating Hotspot..."
 sudo nmcli con up Hotspot
 
-# 6. IPTables NAT (The "Bridge")
+# 6. IPTables NAT (The Bridge)
+# Ensures traffic from Hotspot flows out through Internal WiFi
+echo "Applying NAT rules..."
+sudo iptables -t nat -F POSTROUTING
 sudo iptables -t nat -A POSTROUTING -o "$SOURCE_IF" -j MASQUERADE
 sudo iptables -A FORWARD -i "$SOURCE_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -A FORWARD -i "$HOTSPOT_IF" -o "$SOURCE_IF" -j ACCEPT
@@ -77,3 +92,4 @@ sudo iptables -A FORWARD -i "$HOTSPOT_IF" -o "$SOURCE_IF" -j ACCEPT
 echo "=== SUCCESS ==="
 echo "Hotspot: $HOTSPOT_SSID"
 echo "Interface: $HOTSPOT_IF"
+echo "Gateway: 192.168.150.1"
