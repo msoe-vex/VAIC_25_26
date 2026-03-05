@@ -137,6 +137,8 @@ After=NetworkManager.service bt-pan.service
 Type=oneshot
 ExecStart=/bin/bash /usr/local/bin/robot-bridge-up.sh
 RemainAfterExit=yes
+TimeoutStopSec=5s
+KillMode=none
 [Install]
 WantedBy=multi-user.target
 EOF
