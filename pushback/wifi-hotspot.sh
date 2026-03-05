@@ -4,8 +4,14 @@
 set -euo pipefail
 
 # --- CONFIG ---
-SOURCE_IF="wlP1p1s0"
-HOTSPOT_SSID="Jetson_Orin_AP"
+SOURCE_IF=$(ip route show default | awk '/default/ {print $5}' | head -n 1)
+
+if [ -z "$SOURCE_IF" ]; then
+    SOURCE_IF="wlP1p1s0"
+    echo "WARNING: Could not detect default interface. Defaulting to $SOURCE_IF. Please verify."
+fi
+
+HOTSPOT_SSID="$(hostname)"
 HOTSPOT_PASS="password"
 DRIVER_REPO="https://github.com/aircrack-ng/rtl8812au.git"
 VER="5.6.4.2"
