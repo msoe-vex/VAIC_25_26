@@ -86,4 +86,14 @@ sudo iptables -A FORWARD -i "$SOURCE_IF" -o "$HOTSPOT_IF" -m state --state RELAT
 sudo iptables -A FORWARD -i "$HOTSPOT_IF" -o "$SOURCE_IF" -j ACCEPT
 
 echo "=== SUCCESS ==="
-echo "Active SSID: $HOTSPOT_SSID"
+# 7. PRINT CONNECTION DETAILS
+echo ""
+echo "=========================================="
+echo "          HOTSPOT IS NOW ACTIVE           "
+echo "=========================================="
+echo " Network Name (SSID): $HOTSPOT_SSID"
+echo " Password (PIN):      $HOTSPOT_PASS"
+echo " Gateway IP:          192.168.150.1"
+echo " Interface:           $HOTSPOT_IF"
+echo "=========================================="
+echo "Scan for the name above on your device."
