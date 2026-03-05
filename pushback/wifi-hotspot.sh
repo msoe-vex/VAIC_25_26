@@ -1,7 +1,7 @@
 #!/bin/bash
 # wifi-hotspot.sh
 
-set -euo pipefail
+# set -euo pipefail
 
 # --- CONFIG ---
 SOURCE_IF="wlP1p1s0"
