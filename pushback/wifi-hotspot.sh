@@ -1,6 +1,6 @@
 #!/bin/bash
 # wifi-hotspot.sh
-# 1. Installs RTL8811AU driver using manual DKMS steps
+# 1. Installs RTL8811AU driver (88XXau) using manual DKMS steps
 # 2. Configures WiFi-to-WiFi Bridge
 
 set -euo pipefail
@@ -11,45 +11,52 @@ HOTSPOT_SSID="Jetson_Orin_AP"
 HOTSPOT_PASS="msoe_password"
 DRIVER_REPO="https://github.com/aircrack-ng/rtl8812au.git"
 VER="5.6.4.2"             # Target version for DKMS
+MODULE_NAME="88XXau"      # Confirmed kernel module name
 
 echo "=== System Check ==="
 
 # 1. Driver Installation Logic
-if ! lsmod | grep -q "8812au"; then
-    echo "Driver 8812au not loaded. Starting manual DKMS installation..."
+if ! lsmod | grep -q "$MODULE_NAME"; then
+    echo "Driver $MODULE_NAME not loaded. Checking installation..."
     
-    # Ensure we have internet
-    if ! ping -c 1 -W 2 google.com > /dev/null; then
-        echo "ERROR: No internet connection on $SOURCE_IF. Please connect to WiFi first."
-        exit 1
+    # Check if the driver is already installed in DKMS but just not loaded
+    if ! dkms status | grep -q "$MODULE_NAME"; then
+        echo "Starting manual DKMS installation..."
+        
+        # Ensure we have internet to download tools/repo
+        if ! ping -c 1 -W 2 google.com > /dev/null; then
+            echo "ERROR: No internet connection on $SOURCE_IF. Please connect to WiFi first."
+            exit 1
+        fi
+
+        sudo apt update
+        sudo apt install -y git dkms build-essential bc
+
+        # Clone the repo if it doesn't exist
+        if [ ! -d "rtl8812au" ]; then
+            git clone "$DRIVER_REPO"
+        fi
+        
+        cd rtl8812au
+        
+        echo "Preparing DKMS source directory..."
+        sudo mkdir -p /usr/src/8812au-${VER}
+        sudo cp -r . /usr/src/8812au-${VER}
+
+        echo "Adding, Building, and Installing driver (This takes 5-10 mins)..."
+        # We use 8812au for the DKMS registration name, but the MODULE is 88XXau
+        sudo dkms add -m 8812au -v ${VER} || true
+        sudo dkms build -m 8812au -v ${VER}
+        sudo dkms install -m 8812au -v ${VER}
+        cd ..
     fi
-
-    sudo apt update
-    sudo apt install -y git dkms build-essential bc
-
-    # Clone the repo if it doesn't exist
-    if [ ! -d "rtl8812au" ]; then
-        git clone "$DRIVER_REPO"
-    fi
     
-    cd rtl8812au
-    
-    echo "Preparing DKMS source directory..."
-    sudo mkdir -p /usr/src/8812au-${VER}
-    sudo cp -r . /usr/src/8812au-${VER}
-
-    echo "Adding, Building, and Installing driver (This will take 5-10 mins)..."
-    sudo dkms add -m 8812au -v ${VER} || true
-    sudo dkms build -m 8812au -v ${VER}
-    sudo dkms install -m 8812au -v ${VER}
-    
-    cd ..
-    
-    echo "Probing module..."
-    sudo modprobe 8812au
+    echo "Updating module dependencies and probing $MODULE_NAME..."
+    sudo depmod -a
+    sudo modprobe "$MODULE_NAME"
     sleep 3
 else
-    echo "Driver 8812au is already installed and loaded."
+    echo "Driver $MODULE_NAME is already installed and loaded."
 fi
 
 # 2. Identify the Hotspot Interface
@@ -57,7 +64,7 @@ fi
 HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlxf' | grep -v "$SOURCE_IF" | head -n 1)
 
 if [ -z "$HOTSPOT_IF" ]; then
-    echo "ERROR: USB Hotspot interface not found after driver probe. Check dmesg."
+    echo "ERROR: USB Hotspot interface not found. Try replugging the TP-Link adapter."
     exit 1
 fi
 
@@ -82,7 +89,6 @@ echo "Activating Hotspot..."
 sudo nmcli con up Hotspot
 
 # 6. IPTables NAT (The Bridge)
-# Ensures traffic from Hotspot flows out through Internal WiFi
 echo "Applying NAT rules..."
 sudo iptables -t nat -F POSTROUTING
 sudo iptables -t nat -A POSTROUTING -o "$SOURCE_IF" -j MASQUERADE
