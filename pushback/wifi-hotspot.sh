@@ -6,7 +6,7 @@ set -euo pipefail
 # --- CONFIG ---
 SOURCE_IF="wlP1p1s0"
 HOTSPOT_SSID="Jetson_Orin_AP"
-HOTSPOT_PASS="msoe_password"
+HOTSPOT_PASS="password"
 DRIVER_REPO="https://github.com/aircrack-ng/rtl8812au.git"
 VER="5.6.4.2"
 MODULE_NAME="88XXau"      # The name the kernel uses
