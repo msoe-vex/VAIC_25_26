@@ -1,7 +1,7 @@
 #!/bin/bash
 # wifi-hotspot.sh
 
-# set -euo pipefail
+set -euo pipefail
 
 # --- CONFIG ---
 SOURCE_IF="wlP1p1s0"
@@ -54,7 +54,7 @@ echo "=== Driver Check Complete ==="
 # Using a loop to wait for hardware registration
 echo "Waiting for hardware to register..."
 for i in {1..5}; do
-    HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlxf' | grep -v "$SOURCE_IF" | head -n 1)
+    HOTSPOT_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlx' | grep -v "$SOURCE_IF" | head -n 1)
     [ -n "$HOTSPOT_IF" ] && break
     sleep 1
 done
