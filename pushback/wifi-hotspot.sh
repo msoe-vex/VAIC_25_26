@@ -77,8 +77,10 @@ sudo nmcli con modify "Hotspot" 802-11-wireless.mode ap 802-11-wireless.band bg
 sudo nmcli con modify "Hotspot" 802-11-wireless-security.key-mgmt wpa-psk
 sudo nmcli con modify "Hotspot" 802-11-wireless-security.psk "$HOTSPOT_PASS"
 sudo nmcli con modify "Hotspot" ipv4.method shared ipv4.addresses "192.168.150.1/24"
-sudo nmcli con modify "Hotspot" ipv4.dns "8.8.8.8,1.1.1.1"
-sudo nmcli con modify "Hotspot" ipv4.ignore-auto-dns yes
+
+# Force any DNS traffic (port 53) to Google's DNS
+sudo iptables -t nat -A PREROUTING -i "$HOTSPOT_IF" -p udp --dport 53 -j DNAT --to-destination 8.8.8.8
+sudo iptables -t nat -A PREROUTING -i "$HOTSPOT_IF" -p tcp --dport 53 -j DNAT --to-destination 8.8.8.8
 
 # 6. Activation
 sudo nmcli device set "$HOTSPOT_IF" managed yes || true
