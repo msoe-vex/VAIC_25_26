@@ -120,7 +120,7 @@ echo "Writing a SANITIZED /etc/bluetooth/main.conf..."
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
-Class = 0x020104
+Class = 0x020300
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
@@ -198,7 +198,7 @@ sleep 10
 /usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
 /usr/bin/hciconfig hci0 piscan || true
 /usr/bin/hciconfig hci0 sspmode 1 || true
-/usr/bin/hciconfig hci0 class 0x020104 || true
+/usr/bin/hciconfig hci0 class 0x020300 || true
 
 # 2. Force Register NAP Service (Legacy)
 /usr/bin/sdptool add NAP || true
