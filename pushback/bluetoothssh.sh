@@ -1,5 +1,5 @@
 #!/bin/bash
-# bluetoothpan-setup-full.sh
+# bluetoothssh.sh
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
 # --- FINAL HYBRID STRATEGY (BOOT-PROOF VERSION) ---
