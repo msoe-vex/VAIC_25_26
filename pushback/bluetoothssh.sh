@@ -178,6 +178,7 @@ Type=simple
 ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
 Restart=always
 RestartSec=5
+KillSignal=SIGINT
 TimeoutStopSec=2
 
 [Install]
