@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from VEXAIRL.vex_model_run import VexModelRunner
 from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
-from VEXAIRL.pushback.pushback import ObsIndex
+from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE
 
 
 METERS_TO_INCHES = 39.3701
@@ -497,8 +497,8 @@ class PushbackHandler:
                 self._observation[idx + 1] = float(friendly_blocks[i][2])  # y
             else:
                 # Sentinel value for empty slots
-                self._observation[idx] = -999.0
-                self._observation[idx + 1] = -999.0
+                self._observation[idx] = SENTINEL_BLOCK_VALUE
+                self._observation[idx + 1] = SENTINEL_BLOCK_VALUE
         
         # Update opponent block positions (up to MAX_TRACKED_BLOCKS)
         for i in range(self.MAX_TRACKED_BLOCKS):
@@ -508,8 +508,8 @@ class PushbackHandler:
                 self._observation[idx + 1] = float(opponent_blocks[i][2])  # y
             else:
                 # Sentinel value for empty slots
-                self._observation[idx] = -999.0
-                self._observation[idx + 1] = -999.0
+                self._observation[idx] = SENTINEL_BLOCK_VALUE
+                self._observation[idx + 1] = SENTINEL_BLOCK_VALUE
     
     def update_observation(self, index: int, value: float) -> None:
         """Directly update a specific observation index."""

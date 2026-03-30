@@ -1,5 +1,5 @@
 #!/bin/bash
-# bluetoothpan-setup-full.sh
+# bluetoothssh.sh
 # Full ISOLATED Bluetooth PAN (NAP) server setup (multi-client capable)
 #
 # --- FINAL HYBRID STRATEGY (BOOT-PROOF VERSION) ---
@@ -120,7 +120,7 @@ echo "Writing a SANITIZED /etc/bluetooth/main.conf..."
 sudo tee /etc/bluetooth/main.conf > /dev/null <<MAIN_EOF
 [General]
 Name = %h
-Class = 0x020104
+Class = 0x020300
 DiscoverableTimeout = 0
 PairableTimeout = 0
 JustWorksRepairing = always
@@ -139,9 +139,9 @@ sudo systemctl restart bluetooth.service
 sleep $SLEEP_SHORT
 
 # --- 7. Disable kernel IP forwarding (ISOLATED) ---
-echo "Disabling IP forwarding..."
-echo "net.ipv4.ip_forward=0" | sudo tee /etc/sysctl.d/98-pan-isolated.conf > /dev/null
-sudo sysctl -w net.ipv4.ip_forward=0 >/dev/null || true
+echo "Enabling IP forwarding for WiFi and Bluetooth..."
+echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/90-forwarding.conf > /dev/null
+sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null || true
 
 # --- 8. *** RESTORED *** bt-pan.service (bt-network) ---
 echo "Installing bt-pan.service (bt-network)..."
@@ -178,6 +178,7 @@ Type=simple
 ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
 Restart=always
 RestartSec=5
+KillSignal=SIGINT
 TimeoutStopSec=2
 
 [Install]
@@ -198,7 +199,7 @@ sleep 10
 /usr/bin/hciconfig hci0 lm MASTER,ACCEPT || true
 /usr/bin/hciconfig hci0 piscan || true
 /usr/bin/hciconfig hci0 sspmode 1 || true
-/usr/bin/hciconfig hci0 class 0x020104 || true
+/usr/bin/hciconfig hci0 class 0x020300 || true
 
 # 2. Force Register NAP Service (Legacy)
 /usr/bin/sdptool add NAP || true
