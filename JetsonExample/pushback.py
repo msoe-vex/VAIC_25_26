@@ -293,23 +293,54 @@ class PushbackHandler:
         return self._model_runner
 
     def _send_action(self):
+        """
+        Send next action to robot after computing inference from observation.
+        
+        This method:
+        1. Validates that model runner is initialized
+        2. Updates time remaining in observation
+        3. Calls model inference pipeline (observation -> action)
+        4. Validates action before sending
+        5. Sends action and split commands to robot
+        """
         if self._model_runner is None or self._write is None:
-            print("[DEBUG] Model runner or write function not initialized, cannot send action.", flush=True)
+            print("[ERROR] Model runner or write function not initialized, cannot send action.", flush=True)
             return
 
         # Update time remaining
         if self._start_time is not None and self._total_time is not None:
             self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
 
-        action, split_actions, message_vector = self._model_runner.get_inference(self._observation)
-        self._last_message = message_vector
-        print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
-        # Format: action_id\ncommand1\ncommand2\n...
-        send_header = "RUN_ACTION"
-        send_body = str(action) + "/" + "/".join(split_actions)
-        self._write(send_header, send_body)
+        try:
+            # Get action from model inference pipeline
+            # This includes update_observation_from_tracker() which fills tracker fields
+            action, split_actions, message_vector = self._model_runner.get_inference(self._observation)
+            self._last_message = message_vector
+            
+            # Validation
+            if action is None:
+                print("[ERROR] Model returned None action", flush=True)
+                return
+            
+            if not split_actions or len(split_actions) == 0:
+                print("[WARNING] Model returned empty split_actions, using default idle", flush=True)
+                split_actions = ["IDLE"]
+            
+            # Send action to robot
+            send_header = "RUN_ACTION"
+            send_body = str(action) + "/" + "/".join(split_actions)
+            self._write(send_header, send_body)
 
-        print(f"[DEBUG] Sent action {action} with commands: {split_actions}", flush=True)
+            print(f"[INFO] Sent action {action} with {len(split_actions)} commands", flush=True)
+            
+        except Exception as e:
+            print(f"[ERROR] Action inference failed: {str(e)}", flush=True)
+            # Send fallback IDLE action
+            try:
+                self._write("RUN_ACTION", "13/IDLE")  # Actions.IDLE = 13
+                print("[INFO] Sent fallback IDLE action due to inference error", flush=True)
+            except Exception as e2:
+                print(f"[CRITICAL] Failed to send fallback action: {str(e2)}", flush=True)
     
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
@@ -378,11 +409,23 @@ class PushbackHandler:
             )
             
             current_folder_path = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(current_folder_path, "models", name+".pt")
+            
+            # Initialize VexModelRunner with the game
             self._model_runner = VexModelRunner(
-                model_path=os.path.join(current_folder_path, "models", name+".pt"),
+                model_path=model_path,
                 game=game,
             )
+            
+            # Reset observation array
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+            
+            # Verify setup
+            if self._model_runner.model is None:
+                print(f"[WARNING] Model failed to load from {model_path}", flush=True)
+            else:
+                print(f"[INFO] VexModelRunner initialized successfully for robot '{name}'", flush=True)
+                print(f"[INFO] Agent: {self._model_runner.agent_name}, Device: {self._model_runner.device}", flush=True)
             
         elif rec_header_upper == "ACTION_DONE":
             # Update model state after action completion, then run inference
