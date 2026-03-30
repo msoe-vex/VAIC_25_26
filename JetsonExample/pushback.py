@@ -347,7 +347,7 @@ class PushbackHandler:
         """Handle incoming USB message from V5Comm."""
         rec_header_upper = rec_header.upper()
 
-        if (rec_header_upper not in ['VL','VR','LV','RV','LT','RT', 'POS']):
+        if (rec_header_upper not in ['VL','VR','LV','RV','LT','RT', 'POS', '']):
             print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
         
         if rec_header_upper == "INIT":

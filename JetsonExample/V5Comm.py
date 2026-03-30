@@ -182,6 +182,7 @@ class V5SerialComms:
             payload = line[1:] if line.startswith('#') else line
             # only accept messages that contain a header and body separated by '|'
             if '|' not in payload:
+                print("[DEBUG] Received malformed message: ", line)  # Debug print for malformed messages
                 return "", ""
             # split once into header and body
             header, body = payload.split('|', 1)
