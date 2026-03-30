@@ -575,7 +575,7 @@ class MainApp:
         self.processing = Processing(self.camera.depth_scale, self.camera.profile)
         
         self.v5Map = MapPosition()
-        self.v5Pos = V5GPS(self.v5Pos)
+        self.v5Pos = V5GPS()
         self.v5Web = V5WebData(self.v5Map, self.v5Pos, self.processing)
         self.stats = Statistics(0, 0, 0, 640, 480, 0, False)
         self.rendering = Rendering(self.v5Web)
