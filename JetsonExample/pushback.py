@@ -404,7 +404,7 @@ class PushbackHandler:
                 start_orientation=start_orient
             )
             game = VexAISkillsGame(
-                # robots=[robot],
+                robots=[robot],
                 communication_mode=CommunicationOption.ATTENTION,
                 deterministic=False
             )
