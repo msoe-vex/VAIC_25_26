@@ -331,7 +331,10 @@ class PushbackHandler:
             send_header = "RUN_ACTION"
             send_body = str(action) + "/" + "/".join(split_actions)
             self._write(send_header, send_body)
-            action_name = Actions.name(action) if action in Actions._value2member_map_ else str(action)
+            try:
+                action_name = Actions(action).name
+            except (ValueError, KeyError):
+                action_name = str(action)
 
             print(f"[INFO] Sent action {action_name} with {len(split_actions)} commands", flush=True)
             
