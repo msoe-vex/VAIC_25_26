@@ -182,10 +182,13 @@ class V5GPS:
 
     def updatePositionOverride(self, x: float, y: float, rotation: float):
         """Override x/y/rotation from external position source (e.g., V5 serial POS)."""
+
+        inches_to_meters = 0.0254
+
         self.__positionLock.acquire()
-        self.__position.x = float(x)
-        self.__position.y = float(y)
-        self.__position.rotation = float(rotation)
+        self.__position.x = float(x*inches_to_meters)
+        self.__position.y = float(y*inches_to_meters)
+        self.__position.rotation = float(rotation*inches_to_meters)
         self.__positionLock.release()
     
     def isConnected(self):

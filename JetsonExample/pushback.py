@@ -396,6 +396,8 @@ class PushbackHandler:
             self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
             self._update_gps(GPSOffset(gps_x, gps_y, gps_z, "meters", gps_heading))
 
+            self.v5gps.updatePositionOverride(start_x, start_y, start_orient)  # Set initial position in V5GPS
+
             self._team = team  # Store team for block classification
 
             robot = Robot(
