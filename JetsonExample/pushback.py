@@ -261,8 +261,9 @@ class PushbackHandler:
     """
     
     # Block class IDs from detection model
-    CLASS_RED_BLOCK = 0
-    CLASS_BLUE_BLOCK = 1
+    # labels.txt is ordered: BallBlue (0), BallRed (1)
+    CLASS_RED_BLOCK = 1
+    CLASS_BLUE_BLOCK = 0
     
     MAX_TRACKED_BLOCKS = 15
     
