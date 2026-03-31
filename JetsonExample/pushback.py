@@ -453,11 +453,8 @@ class PushbackHandler:
                     self._y = float(parts[1])  
                     self._orient = float(parts[2])
 
-                    self.v5gps.__positionLock.acquire()
-                    self.v5gps.__position.x = self._x
-                    self.v5gps.__position.y = self._y
-                    self.v5gps.__position.rotation = self._orient
-                    self.v5gps.__positionLock.release()
+                    # Update V5GPS state through its public API (avoids name-mangling private attrs).
+                    self.v5gps.updatePositionOverride(self._x, self._y, self._orient)
             except Exception as e:
                 print(f"Failed to parse pos payload '{rec_body}': {e}")
             

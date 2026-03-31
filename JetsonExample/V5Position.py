@@ -179,6 +179,14 @@ class V5GPS:
         self.__positionLock.release()
 
         return nowPosition
+
+    def updatePositionOverride(self, x: float, y: float, rotation: float):
+        """Override x/y/rotation from external position source (e.g., V5 serial POS)."""
+        self.__positionLock.acquire()
+        self.__position.x = float(x)
+        self.__position.y = float(y)
+        self.__position.rotation = float(rotation)
+        self.__positionLock.release()
     
     def isConnected(self):
         # Checks if the GPS is connected
