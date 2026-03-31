@@ -27,7 +27,7 @@ from VEXAIRL.vex_model_run import VexModelRunner
 from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
 from VEXAIRL.vex_core.config import CommunicationOption
-from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE
+from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE, Actions
 
 
 METERS_TO_INCHES = 39.3701
@@ -331,8 +331,9 @@ class PushbackHandler:
             send_header = "RUN_ACTION"
             send_body = str(action) + "/" + "/".join(split_actions)
             self._write(send_header, send_body)
+            action_name = Actions.name(action) if action in Actions._value2member_map_ else str(action)
 
-            print(f"[INFO] Sent action {action} with {len(split_actions)} commands", flush=True)
+            print(f"[INFO] Sent action {action_name} with {len(split_actions)} commands", flush=True)
             
         except Exception as e:
             print(f"[ERROR] Action inference failed: {str(e)}", flush=True)
