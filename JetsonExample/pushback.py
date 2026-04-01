@@ -440,6 +440,7 @@ class PushbackHandler:
             if rec_body and self._model_runner:
                 action = int(rec_body)
                 self._model_runner.run_action(action)
+            time.sleep(5.0) #Delay so we can readx
             self._send_action()
             
         elif rec_header_upper == "START":
