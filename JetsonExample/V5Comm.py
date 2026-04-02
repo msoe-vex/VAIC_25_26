@@ -167,24 +167,32 @@ class V5SerialComms:
     def write(self, header: str, body: str):
         # Write data to the serial port in the format "#header|body\n"
         with self.__writeLock:
-            if(self.__ser != None and self.__ser.isOpen()):
-                line = f"#{header}|{body}\n"
+            if self.__ser is None or not self.__ser.isOpen():
+                return False
+
+            line = f"#{header}|{body}\n"
+            try:
                 self.__ser.write(line.encode('utf-8'))
                 self.__ser.flush()
+                return True
+            except Exception as e:
+                print(f"[ERROR] Serial write failed for '{header}': {e}", flush=True)
+                return False
     
     def __read(self):
         # Read and return header and body based on "#header|body\n" format
         if(self.__ser != None and self.__ser.isOpen()):
-            line =  self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
+            line = self.__ser.readline().decode("utf-8", errors="ignore").rstrip()
             header = ""
             body = ""
             if not line:
                 return "", ""
+            line = line.replace("\x00", "")
             # normalize payload (strip leading '#')
             payload = line[1:] if line.startswith('#') else line
             # only accept messages that contain a header and body separated by '|'
             if '|' not in payload:
-                print("[DEBUG] Received malformed message: ", line)  # Debug print for malformed messages
+                print(f"[WARNING] Received malformed message: {line}", flush=True)
                 return "", ""
             # split once into header and body
             header, body = payload.split('|', 1)
@@ -216,7 +224,7 @@ class V5SerialComms:
                 print(f"Connecting to {port}", flush=True)
 
                 # Establish serial connection with the port
-                self.__ser = serial.Serial(port, 115200, timeout=10)
+                self.__ser = serial.Serial(port, 115200, timeout=0.25)
                 self.__ser.flushInput()
                 self.__ser.flushOutput()
 

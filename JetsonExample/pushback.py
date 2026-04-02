@@ -267,7 +267,7 @@ class PushbackHandler:
     CLASS_BLUE_BLOCK = 0
     
     MAX_TRACKED_BLOCKS = 15
-    ACK_TIMEOUT_SEC = 0.1
+    ACK_TIMEOUT_SEC = 0.25
     RESEND_POLL_SEC = 0.02
     
     def __init__(self, write_func, update_camera_func, update_gps_func, v5gps):
@@ -369,7 +369,8 @@ class PushbackHandler:
 
             if resend_seq is not None and self._write is not None:
                 self._write("RUN_ACTION", resend_body)
-                print(f"[WARNING] No ACK for seq {resend_seq} after 100ms; resend #{resend_retry}", flush=True)
+                timeout_ms = int(self.ACK_TIMEOUT_SEC * 1000)
+                print(f"[WARNING] No ACK for seq {resend_seq} after {timeout_ms}ms; resend #{resend_retry}", flush=True)
 
     def _send_action(self):
         """
@@ -523,9 +524,11 @@ class PushbackHandler:
             # Treat ACTION_DONE as implicit delivery confirmation to avoid unnecessary resends.
             self._clear_pending_action()
             if rec_body and self._model_runner:
-                action = int(rec_body)
-                self._model_runner.run_action(action)
-            time.sleep(5.0) #Delay so we can readx
+                try:
+                    action = int(rec_body)
+                    self._model_runner.run_action(action)
+                except Exception as e:
+                    print(f"[WARNING] Failed to apply ACTION_DONE payload '{rec_body}': {e}", flush=True)
             self._send_action()
             
         elif rec_header_upper == "START":
