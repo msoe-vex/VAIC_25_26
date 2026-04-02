@@ -529,6 +529,7 @@ class PushbackHandler:
                     self._model_runner.run_action(action)
                 except Exception as e:
                     print(f"[WARNING] Failed to apply ACTION_DONE payload '{rec_body}': {e}", flush=True)
+            time.sleep(10.0)  # Wait for testing
             self._send_action()
             
         elif rec_header_upper == "START":
