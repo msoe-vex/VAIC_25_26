@@ -153,6 +153,7 @@ class V5SerialComms:
         self.__ser = None
         self.__detections = AIRecord(Position(0, 0, 0, 0, 0, 0, 0, 0), [])
         self.__detectionLock = Lock()
+        self.__writeLock = Lock()
         self.__data = {}
         self.__handler = handler
 
@@ -165,10 +166,11 @@ class V5SerialComms:
 
     def write(self, header: str, body: str):
         # Write data to the serial port in the format "#header|body\n"
-        if(self.__ser != None and self.__ser.isOpen()):
-            line = f"#{header}|{body}\n"
-            self.__ser.write(line.encode('utf-8'))
-            self.__ser.flush()
+        with self.__writeLock:
+            if(self.__ser != None and self.__ser.isOpen()):
+                line = f"#{header}|{body}\n"
+                self.__ser.write(line.encode('utf-8'))
+                self.__ser.flush()
     
     def __read(self):
         # Read and return header and body based on "#header|body\n" format
