@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import time
 import os
+import threading
 from glob import glob
 
 from V5MapPosition import MapPosition
@@ -266,6 +267,8 @@ class PushbackHandler:
     CLASS_BLUE_BLOCK = 0
     
     MAX_TRACKED_BLOCKS = 15
+    ACK_TIMEOUT_SEC = 0.1
+    RESEND_POLL_SEC = 0.02
     
     def __init__(self, write_func, update_camera_func, update_gps_func, v5gps):
         self._model_runner: VexModelRunner = None
@@ -281,6 +284,14 @@ class PushbackHandler:
         self._y = None
         self._orient = None
         self.v5gps = v5gps
+        self._action_sequence = 0
+        self._pending_action_seq = None
+        self._pending_action_body = None
+        self._pending_action_sent_at = None
+        self._pending_action_retries = 0
+        self._pending_lock = threading.Lock()
+        self._ack_watchdog_thread = threading.Thread(target=self._ack_watchdog_loop, daemon=True)
+        self._ack_watchdog_thread.start()
                 
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
@@ -293,6 +304,72 @@ class PushbackHandler:
     @property
     def model_runner(self):
         return self._model_runner
+
+    def _clear_pending_action(self):
+        with self._pending_lock:
+            self._pending_action_seq = None
+            self._pending_action_body = None
+            self._pending_action_sent_at = None
+            self._pending_action_retries = 0
+
+    def _set_pending_action(self, seq: int, body: str):
+        with self._pending_lock:
+            self._pending_action_seq = seq
+            self._pending_action_body = body
+            self._pending_action_sent_at = time.time()
+            self._pending_action_retries = 0
+
+    def _acknowledge_action_seq(self, ack_body: str):
+        try:
+            ack_seq = int(ack_body.strip())
+        except Exception:
+            print(f"[WARNING] Invalid ACK payload: '{ack_body}'", flush=True)
+            return
+
+        with self._pending_lock:
+            if self._pending_action_seq is None:
+                print(f"[DEBUG] ACK {ack_seq} received with no pending action", flush=True)
+                return
+
+            if ack_seq == self._pending_action_seq:
+                self._pending_action_seq = None
+                self._pending_action_body = None
+                self._pending_action_sent_at = None
+                self._pending_action_retries = 0
+                print(f"[DEBUG] ACK received for action seq {ack_seq}", flush=True)
+            elif ack_seq < self._pending_action_seq:
+                print(f"[DEBUG] Ignoring stale ACK seq {ack_seq}; waiting for {self._pending_action_seq}", flush=True)
+            else:
+                print(f"[DEBUG] ACK seq {ack_seq} ahead of pending seq {self._pending_action_seq}; clearing pending", flush=True)
+                self._pending_action_seq = None
+                self._pending_action_body = None
+                self._pending_action_sent_at = None
+                self._pending_action_retries = 0
+
+    def _ack_watchdog_loop(self):
+        while True:
+            time.sleep(self.RESEND_POLL_SEC)
+
+            resend_seq = None
+            resend_body = None
+            resend_retry = None
+
+            with self._pending_lock:
+                if (
+                    self._pending_action_seq is not None
+                    and self._pending_action_body is not None
+                    and self._pending_action_sent_at is not None
+                    and (time.time() - self._pending_action_sent_at) >= self.ACK_TIMEOUT_SEC
+                ):
+                    resend_seq = self._pending_action_seq
+                    resend_body = self._pending_action_body
+                    self._pending_action_retries += 1
+                    resend_retry = self._pending_action_retries
+                    self._pending_action_sent_at = time.time()
+
+            if resend_seq is not None and self._write is not None:
+                self._write("RUN_ACTION", resend_body)
+                print(f"[WARNING] No ACK for seq {resend_seq} after 100ms; resend #{resend_retry}", flush=True)
 
     def _send_action(self):
         """
@@ -328,22 +405,28 @@ class PushbackHandler:
                 print("[WARNING] Model returned empty split_actions, using default idle", flush=True)
                 split_actions = ["IDLE"]
             
-            # Send action to robot
-            send_header = "RUN_ACTION"
-            send_body = str(action) + "/" + "/".join(split_actions)
-            self._write(send_header, send_body)
+            # Send action to robot with sequence prefix: seq/action/sub1/sub2/...
+            seq = self._action_sequence
+            send_body = str(seq) + "/" + str(action) + "/" + "/".join(split_actions)
+            self._write("RUN_ACTION", send_body)
+            self._set_pending_action(seq, send_body)
+            self._action_sequence += 1
             try:
                 action_name = Actions(action).name
             except (ValueError, KeyError):
                 action_name = str(action)
 
-            print(f"[INFO] Sent action {action_name} with {len(split_actions)} commands", flush=True)
+            print(f"[INFO] Sent action seq {seq} ({action_name}) with {len(split_actions)} commands", flush=True)
             
         except Exception as e:
             print(f"[ERROR] Action inference failed: {str(e)}", flush=True)
             # Send fallback IDLE action
             try:
-                self._write("RUN_ACTION", "13/IDLE")  # Actions.IDLE = 13
+                seq = self._action_sequence
+                fallback_body = str(seq) + f"/{Actions.IDLE.value}/{Actions.IDLE.name}"  # Actions.IDLE = 13
+                self._write("RUN_ACTION", fallback_body)
+                self._set_pending_action(seq, fallback_body)
+                self._action_sequence += 1
                 print("[INFO] Sent fallback IDLE action due to inference error", flush=True)
             except Exception as e2:
                 print(f"[CRITICAL] Failed to send fallback action: {str(e2)}", flush=True)
@@ -437,6 +520,8 @@ class PushbackHandler:
             
         elif rec_header_upper == "ACTION_DONE":
             # Update model state after action completion, then run inference
+            # Treat ACTION_DONE as implicit delivery confirmation to avoid unnecessary resends.
+            self._clear_pending_action()
             if rec_body and self._model_runner:
                 action = int(rec_body)
                 self._model_runner.run_action(action)
@@ -445,9 +530,14 @@ class PushbackHandler:
             
         elif rec_header_upper == "START":
             print("[DEBUG] Received START command", flush=True)
+            self._action_sequence = 0
+            self._clear_pending_action()
             self._start_time = time.time()
             self._total_time = float(rec_body)
             self._send_action()
+
+        elif rec_header_upper == "ACK":
+            self._acknowledge_action_seq(rec_body)
             
         elif rec_header_upper == "POS":
             # Update self position
