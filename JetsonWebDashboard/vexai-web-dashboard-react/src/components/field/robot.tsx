@@ -22,7 +22,7 @@ const Robot = () => {
           image={robot}
           x={position.x * scale}
           y={position.y * scale * -1}
-          rotation={position.azimuth}
+          rotation={position.rotation ?? position.azimuth}
           width={config.field.robot.width * scale * config.field.robot.scale}
           height={config.field.robot.length * scale * config.field.robot.scale}
           offsetX={(config.field.robot.width * scale * config.field.robot.scale) / 2}

@@ -188,7 +188,7 @@ class V5GPS:
         self.__positionLock.acquire()
         self.__position.x = float(x*inches_to_meters)
         self.__position.y = float(y*inches_to_meters)
-        self.__position.rotation = float(rotation * inches_to_meters)
+        self.__position.rotation = float(rotation)
         self.__positionLock.release()
     
     def isConnected(self):
