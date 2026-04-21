@@ -151,7 +151,7 @@ class V5GPS:
                             self.__position.z = z
                             self.__position.azimuth = az
                             self.__position.elevation = el
-                            self.__position.rotation = rot
+                            # Rotation is supplied by the external position override source.
                             self.__position.status = localStatus
                             self.__position.frameCount = self.__frameCount
                             self.__positionLock.release()
