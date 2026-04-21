@@ -73,11 +73,14 @@ class MapPosition:
         CAMERAHEADINGOFFSET = self.CAMERAHEADINGOFFSET
         CAMERAELEVATIONOFFSET = self.CAMERAELEVATIONOFFSET
 
-        # Create a rotation matrix using azimuth, elevation, and rotation for the object relative to the camera
-        rotCamera = MapPosition.azel2rot(math.radians(position.azimuth - CAMERAHEADINGOFFSET), math.radians(position.elevation - CAMERAELEVATIONOFFSET), math.radians(position.rotation))
+        # Use rotation as the robot heading basis so camera FOV and map projection share the same reference.
+        heading = position.rotation
+
+        # Create a rotation matrix using heading, elevation, and rotation for the object relative to the camera
+        rotCamera = MapPosition.azel2rot(math.radians(heading - CAMERAHEADINGOFFSET), math.radians(position.elevation - CAMERAELEVATIONOFFSET), math.radians(position.rotation))
         
-        # Create a rotation matrix using azimuth, elevation, and rotation for the camera offset relative to the robot
-        rotRobot = MapPosition.azel2rot(math.radians(position.azimuth), math.radians(position.elevation), math.radians(position.rotation))
+        # Create a rotation matrix using heading, elevation, and rotation for the camera offset relative to the robot
+        rotRobot = MapPosition.azel2rot(math.radians(heading), math.radians(position.elevation), math.radians(position.rotation))
 
         # Compute the object location vector in camera space
         vector = np.zeros(shape=(3, 1))
