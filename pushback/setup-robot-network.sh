@@ -232,7 +232,9 @@ sudo systemctl enable --now bt-agent.service
 echo "Detecting WiFi hotspot interface..."
 
 GET_IF() {
-ip -o link show | awk -F': ' '{print $2}' | grep -E '^wlan|^wlx' | grep -v "$SOURCE_IF" | head -n 1
+    # Adding '|| true' ensures that even if grep finds nothing, 
+    # the function returns a success code so the script keeps running.
+    nmcli -t -f DEVICE,TYPE device | grep wifi | cut -d: -f1 | grep -v "$SOURCE_IF" | head -n 1 || true
 }
 
 HOTSPOT_IF=$(GET_IF)

@@ -55,7 +55,7 @@ class V5GPS:
     __MAP_PACKET_TYPE = 0x0001
 
 
-    def __init__(self, port = None):
+    def __init__(self, port = None, ):
         # Initialization of GPS attributes including port, position, and offsets
         self.__dev = port
         self.__started = False
@@ -146,12 +146,12 @@ class V5GPS:
                         if(status == 20):
                             x, y = self.__filter.update(x, y)
                             self.__positionLock.acquire()
-                            self.__position.x = x
-                            self.__position.y = y
+                            #self.__position.x = pushback._x
+                            #self.__position.y = pushback._y
                             self.__position.z = z
                             self.__position.azimuth = az
                             self.__position.elevation = el
-                            self.__position.rotation = rot
+                            # Rotation is supplied by the external position override source.
                             self.__position.status = localStatus
                             self.__position.frameCount = self.__frameCount
                             self.__positionLock.release()
@@ -179,6 +179,17 @@ class V5GPS:
         self.__positionLock.release()
 
         return nowPosition
+
+    def updatePositionOverride(self, x: float, y: float, rotation: float):
+        """Override x/y/rotation from external position source (e.g., V5 serial POS)."""
+
+        inches_to_meters = 0.0254
+
+        self.__positionLock.acquire()
+        self.__position.x = float(x*inches_to_meters)
+        self.__position.y = float(y*inches_to_meters)
+        self.__position.rotation = float(rotation)
+        self.__positionLock.release()
     
     def isConnected(self):
         # Checks if the GPS is connected

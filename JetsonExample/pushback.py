@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import time
 import os
+import threading
 from glob import glob
 
 from V5MapPosition import MapPosition
@@ -26,7 +27,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from VEXAIRL.vex_model_run import VexModelRunner
 from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
-from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE
+from VEXAIRL.vex_core.config import CommunicationOption
+from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE, Actions
 
 
 METERS_TO_INCHES = 39.3701
@@ -260,12 +262,15 @@ class PushbackHandler:
     """
     
     # Block class IDs from detection model
-    CLASS_RED_BLOCK = 0
-    CLASS_BLUE_BLOCK = 1
+    # labels.txt is ordered: BallBlue (0), BallRed (1)
+    CLASS_RED_BLOCK = 1
+    CLASS_BLUE_BLOCK = 0
     
     MAX_TRACKED_BLOCKS = 15
+    ACK_TIMEOUT_SEC = 0.25
+    RESEND_POLL_SEC = 0.02
     
-    def __init__(self, write_func, update_camera_func, update_gps_func):
+    def __init__(self, write_func, update_camera_func, update_gps_func, v5gps):
         self._model_runner: VexModelRunner = None
         self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
         self._write = write_func
@@ -275,7 +280,19 @@ class PushbackHandler:
         self._update_camera = update_camera_func
         self._update_gps = update_gps_func
         self._last_message: np.ndarray = None  # Latest message vector from model
-        
+        self._x = None
+        self._y = None
+        self._orient = None
+        self.v5gps = v5gps
+        self._action_sequence = 0
+        self._pending_action_seq = None
+        self._pending_action_body = None
+        self._pending_action_sent_at = None
+        self._pending_action_retries = 0
+        self._pending_lock = threading.Lock()
+        self._ack_watchdog_thread = threading.Thread(target=self._ack_watchdog_loop, daemon=True)
+        self._ack_watchdog_thread.start()
+                
     def set_write_func(self, write_func):
         """Set the write callback after construction."""
         self._write = write_func
@@ -288,30 +305,138 @@ class PushbackHandler:
     def model_runner(self):
         return self._model_runner
 
+    def _clear_pending_action(self):
+        with self._pending_lock:
+            self._pending_action_seq = None
+            self._pending_action_body = None
+            self._pending_action_sent_at = None
+            self._pending_action_retries = 0
+
+    def _set_pending_action(self, seq: int, body: str):
+        with self._pending_lock:
+            self._pending_action_seq = seq
+            self._pending_action_body = body
+            self._pending_action_sent_at = time.time()
+            self._pending_action_retries = 0
+
+    def _acknowledge_action_seq(self, ack_body: str):
+        try:
+            ack_seq = int(ack_body.strip())
+        except Exception:
+            print(f"[WARNING] Invalid ACK payload: '{ack_body}'", flush=True)
+            return
+
+        with self._pending_lock:
+            if self._pending_action_seq is None:
+                print(f"[DEBUG] ACK {ack_seq} received with no pending action", flush=True)
+                return
+
+            if ack_seq == self._pending_action_seq:
+                self._pending_action_seq = None
+                self._pending_action_body = None
+                self._pending_action_sent_at = None
+                self._pending_action_retries = 0
+                print(f"[DEBUG] ACK received for action seq {ack_seq}", flush=True)
+            elif ack_seq < self._pending_action_seq:
+                print(f"[DEBUG] Ignoring stale ACK seq {ack_seq}; waiting for {self._pending_action_seq}", flush=True)
+            else:
+                print(f"[DEBUG] ACK seq {ack_seq} ahead of pending seq {self._pending_action_seq}; clearing pending", flush=True)
+                self._pending_action_seq = None
+                self._pending_action_body = None
+                self._pending_action_sent_at = None
+                self._pending_action_retries = 0
+
+    def _ack_watchdog_loop(self):
+        while True:
+            time.sleep(self.RESEND_POLL_SEC)
+
+            resend_seq = None
+            resend_body = None
+            resend_retry = None
+
+            with self._pending_lock:
+                if (
+                    self._pending_action_seq is not None
+                    and self._pending_action_body is not None
+                    and self._pending_action_sent_at is not None
+                    and (time.time() - self._pending_action_sent_at) >= self.ACK_TIMEOUT_SEC
+                ):
+                    resend_seq = self._pending_action_seq
+                    resend_body = self._pending_action_body
+                    self._pending_action_retries += 1
+                    resend_retry = self._pending_action_retries
+                    self._pending_action_sent_at = time.time()
+
+            if resend_seq is not None and self._write is not None:
+                self._write("RUN_ACTION", resend_body)
+                timeout_ms = int(self.ACK_TIMEOUT_SEC * 1000)
+                print(f"[WARNING] No ACK for seq {resend_seq} after {timeout_ms}ms; resend #{resend_retry}", flush=True)
+
     def _send_action(self):
+        """
+        Send next action to robot after computing inference from observation.
+        
+        This method:
+        1. Validates that model runner is initialized
+        2. Updates time remaining in observation
+        3. Calls model inference pipeline (observation -> action)
+        4. Validates action before sending
+        5. Sends action and split commands to robot
+        """
         if self._model_runner is None or self._write is None:
-            print("[DEBUG] Model runner or write function not initialized, cannot send action.", flush=True)
+            print("[ERROR] Model runner or write function not initialized, cannot send action.", flush=True)
             return
 
         # Update time remaining
         if self._start_time is not None and self._total_time is not None:
             self._observation[ObsIndex.TIME_REMAINING] = max(self._total_time - (time.time() - self._start_time), 0)
 
-        action, split_actions, message_vector = self._model_runner.get_inference(self._observation)
-        self._last_message = message_vector
-        print(f"[DEBUG] Computed action {action} with commands: {split_actions}", flush=True)
-        # Format: action_id\ncommand1\ncommand2\n...
-        send_header = "RUN_ACTION"
-        send_body = str(action) + "/" + "/".join(split_actions)
-        self._write(send_header, send_body)
+        try:
+            # Get action from model inference pipeline
+            # This includes update_observation_from_tracker() which fills tracker fields
+            action, split_actions, message_vector = self._model_runner.get_inference(self._observation)
+            self._last_message = message_vector
+            
+            # Validation
+            if action is None:
+                print("[ERROR] Model returned None action", flush=True)
+                return
+            
+            if not split_actions or len(split_actions) == 0:
+                print("[WARNING] Model returned empty split_actions, using default idle", flush=True)
+                split_actions = ["IDLE"]
+            
+            # Send action to robot with sequence prefix: seq/action/sub1/sub2/...
+            seq = self._action_sequence
+            send_body = str(seq) + "/" + str(action) + "/" + "/".join(split_actions)
+            self._write("RUN_ACTION", send_body)
+            self._set_pending_action(seq, send_body)
+            self._action_sequence += 1
+            try:
+                action_name = Actions(action).name
+            except (ValueError, KeyError):
+                action_name = str(action)
 
-        print(f"[DEBUG] Sent action {action} with commands: {split_actions}", flush=True)
+            print(f"[INFO] Sent action seq {seq} ({action_name}) with {len(split_actions)} commands", flush=True)
+            
+        except Exception as e:
+            print(f"[ERROR] Action inference failed: {str(e)}", flush=True)
+            # Send fallback IDLE action
+            try:
+                seq = self._action_sequence
+                fallback_body = str(seq) + f"/{Actions.IDLE.value}/{Actions.IDLE.name}"  # Actions.IDLE = 13
+                self._write("RUN_ACTION", fallback_body)
+                self._set_pending_action(seq, fallback_body)
+                self._action_sequence += 1
+                print("[INFO] Sent fallback IDLE action due to inference error", flush=True)
+            except Exception as e2:
+                print(f"[CRITICAL] Failed to send fallback action: {str(e2)}", flush=True)
     
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
         rec_header_upper = rec_header.upper()
 
-        if (rec_header_upper not in ['VL','VR','LV','RV','LT','RT', 'POS']):
+        if (rec_header_upper not in ['VL','VR','LV','RV','LT','RT', 'POS', '']):
             print(f"[DEBUG] Received message - Header: '{rec_header}', Body: '{rec_body}'", flush=True)
         
         if rec_header_upper == "INIT":
@@ -356,6 +481,8 @@ class PushbackHandler:
             self._update_camera(CameraOffset(cam_x, cam_y, cam_z, "meters", cam_heading, cam_elevation))
             self._update_gps(GPSOffset(gps_x, gps_y, gps_z, "meters", gps_heading))
 
+            self.v5gps.updatePositionOverride(start_x, start_y, start_orient)  # Set initial position in V5GPS
+
             self._team = team  # Store team for block classification
 
             robot = Robot(
@@ -369,29 +496,51 @@ class PushbackHandler:
             )
             game = VexAISkillsGame(
                 robots=[robot],
-                enable_communication=True,
+                communication_mode=CommunicationOption.ATTENTION,
                 deterministic=False
             )
             
             current_folder_path = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(current_folder_path, "models", name+".pt")
+            
+            # Initialize VexModelRunner with the game
             self._model_runner = VexModelRunner(
-                model_path=os.path.join(current_folder_path, "models", name+".pt"),
+                model_path=model_path,
                 game=game,
             )
+            
+            # Reset observation array
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+            
+            # Verify setup
+            if self._model_runner.model is None:
+                print(f"[WARNING] Model failed to load from {model_path}", flush=True)
+            else:
+                print(f"[INFO] VexModelRunner initialized successfully for robot '{name}'", flush=True)
+                print(f"[INFO] Agent: {self._model_runner.agent_name}, Device: {self._model_runner.device}", flush=True)
             
         elif rec_header_upper == "ACTION_DONE":
             # Update model state after action completion, then run inference
+            # Treat ACTION_DONE as implicit delivery confirmation to avoid unnecessary resends.
+            self._clear_pending_action()
             if rec_body and self._model_runner:
-                action = int(rec_body)
-                self._model_runner.run_action(action)
+                try:
+                    action = int(rec_body)
+                    self._model_runner.run_action(action)
+                except Exception as e:
+                    print(f"[WARNING] Failed to apply ACTION_DONE payload '{rec_body}': {e}", flush=True)
             self._send_action()
             
         elif rec_header_upper == "START":
             print("[DEBUG] Received START command", flush=True)
+            self._action_sequence = 0
+            self._clear_pending_action()
             self._start_time = time.time()
             self._total_time = float(rec_body)
             self._send_action()
+
+        elif rec_header_upper == "ACK":
+            self._acknowledge_action_seq(rec_body)
             
         elif rec_header_upper == "POS":
             # Update self position
@@ -401,6 +550,12 @@ class PushbackHandler:
                     self._observation[ObsIndex.SELF_POS_X] = float(parts[0])
                     self._observation[ObsIndex.SELF_POS_Y] = float(parts[1])
                     self._observation[ObsIndex.SELF_ORIENT] = float(parts[2])
+                    self._x = float(parts[0])
+                    self._y = float(parts[1])  
+                    self._orient = float(parts[2])
+
+                    # Update V5GPS state through its public API (avoids name-mangling private attrs).
+                    self.v5gps.updatePositionOverride(self._x, self._y, self._orient)
             except Exception as e:
                 print(f"Failed to parse pos payload '{rec_body}': {e}")
             
@@ -525,7 +680,7 @@ class MainApp:
         self.rendering = Rendering(self.v5Web)
 
         # Create the pushback handler for VEXAIRL model management
-        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset)
+        self.pushback_handler = PushbackHandler(None, self.v5Web.setCameraOffset, self.v5Web.setGpsOffset, self.v5Pos)
 
         self.v5 = V5SerialComms(handler=self.pushback_handler)
 
@@ -556,7 +711,7 @@ class MainApp:
         run_time = time.time()
 
         # For testing, initialize model directly
-        self.pushback_handler.handle("INIT", "red_robot_0,red,15,15,15,65,24,270,-6.5,-3.75,14.25,90,-10,-6.5,1.5,10,270")
+        # self.pushback_handler.handle("INIT", "shared_policy,red,15,15,15,65,24,270,-6.5,-3.75,14.25,90,-10,-6.5,1.5,10,270")
 
         print("\nStarting Loop", flush=True)
         last_message_time = time.time()

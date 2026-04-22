@@ -65,3 +65,10 @@ V5Example contains the `ai_demo` V5 Project which has examples on how to connect
 
 1. Connect to the Jetson Nano through the Bluetooth PAN as described above
 2. Open a web browser and navigate to `http://msoe-nano:3000/#/`
+
+
+## Testing inference
+
+```shell
+git pull && git submodule update && sudo systemctl restart vexai.service && sudo journalctl -efu vexai.service --since "1 sec ago"
+```

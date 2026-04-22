@@ -16,13 +16,18 @@ interface FovProps {
 const Fov = ({ fieldHeight }: FovProps) => {
   const position = useAppSelector((state) => state.data.response.position);
   const scale = useAppSelector((state) => state.app.scale);
+  const cameraHeadingOffset =
+    useAppSelector((state) => state.settings.cameraOffset.headingOffset) ?? 0;
+
+  const robotHeading = position ? (position.rotation ?? position.azimuth ?? 0) : 0;
+  const cameraHeading = robotHeading - cameraHeadingOffset;
 
   return (
     position ? (
       <Arc
         x={position.x * scale}
         y={position.y * scale * -1}
-        rotation={position.azimuth - 90 - config.field.robot.fov / 2}
+        rotation={cameraHeading - 90 - config.field.robot.fov / 2}
         innerRadius={0}
         outerRadius={fieldHeight * 2}
         fill="white"
