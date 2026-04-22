@@ -511,6 +511,10 @@ class PushbackHandler:
             
             # Reset observation array
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+
+            # Reset action sequence
+            self._action_sequence = 0
+            self._clear_pending_action()
             
             # Verify setup
             if self._model_runner.model is None:
