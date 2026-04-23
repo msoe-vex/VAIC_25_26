@@ -269,6 +269,7 @@ class PushbackHandler:
     MAX_TRACKED_BLOCKS = 15
     ACK_TIMEOUT_SEC = 0.25
     RESEND_POLL_SEC = 0.02
+    ACTION_SEND_DELAY_SEC = 0.0
     
     def __init__(self, write_func, update_camera_func, update_gps_func, v5gps):
         self._model_runner: VexModelRunner = None
@@ -290,6 +291,8 @@ class PushbackHandler:
         self._pending_action_sent_at = None
         self._pending_action_retries = 0
         self._pending_lock = threading.Lock()
+        self._delayed_action_timer = None
+        self._delayed_action_lock = threading.Lock()
         self._ack_watchdog_thread = threading.Thread(target=self._ack_watchdog_loop, daemon=True)
         self._ack_watchdog_thread.start()
                 
@@ -431,6 +434,34 @@ class PushbackHandler:
                 print("[INFO] Sent fallback IDLE action due to inference error", flush=True)
             except Exception as e2:
                 print(f"[CRITICAL] Failed to send fallback action: {str(e2)}", flush=True)
+
+    def _send_action_from_timer(self):
+        with self._delayed_action_lock:
+            self._delayed_action_timer = None
+        self._send_action()
+
+    def _schedule_send_action(self, delay_sec: float = None):
+        if delay_sec is None:
+            delay_sec = self.ACTION_SEND_DELAY_SEC
+
+        send_now = delay_sec <= 0
+
+        with self._delayed_action_lock:
+            if self._delayed_action_timer is not None:
+                self._delayed_action_timer.cancel()
+                self._delayed_action_timer = None
+
+            if not send_now:
+                self._delayed_action_timer = threading.Timer(delay_sec, self._send_action_from_timer)
+                self._delayed_action_timer.daemon = True
+                self._delayed_action_timer.start()
+
+        if send_now:
+            self._send_action()
+            print("[DEBUG] Scheduled action send immediately", flush=True)
+            return
+
+        print(f"[DEBUG] Scheduled action send in {delay_sec:.1f}s", flush=True)
     
     def handle(self, rec_header: str, rec_body: str) -> None:
         """Handle incoming USB message from V5Comm."""
@@ -533,7 +564,7 @@ class PushbackHandler:
                     self._model_runner.run_action(action)
                 except Exception as e:
                     print(f"[WARNING] Failed to apply ACTION_DONE payload '{rec_body}': {e}", flush=True)
-            self._send_action()
+            self._schedule_send_action(0.0)
             
         elif rec_header_upper == "START":
             print("[DEBUG] Received START command", flush=True)
@@ -541,7 +572,7 @@ class PushbackHandler:
             self._clear_pending_action()
             self._start_time = time.time()
             self._total_time = float(rec_body)
-            self._send_action()
+            self._schedule_send_action()
 
         elif rec_header_upper == "ACK":
             self._acknowledge_action_seq(rec_body)

@@ -2,7 +2,6 @@ from ctypes import Array
 import struct
 import threading
 from threading import Lock
-import queue
 import json
 from json import JSONEncoder
 import serial
@@ -157,35 +156,19 @@ class V5SerialComms:
         self.__writeLock = Lock()
         self.__data = {}
         self.__handler = handler
-        self.__handlerQueue = queue.Queue(maxsize=1024)
-        self.__handlerThread = None
 
     def start(self):
         # Start serial communication thread
         self.__started = True
-        if self.__handler is not None:
-            self.__handlerThread = threading.Thread(target=self.__dispatch_loop, args=())
-            self.__handlerThread.daemon = True
-            self.__handlerThread.start()
         self.__thread = threading.Thread(target=self.__run, args=())
         self.__thread.daemon = True
         self.__thread.start()
 
-    def __dispatch_loop(self):
-        while self.__started:
-            try:
-                item = self.__handlerQueue.get(timeout=0.25)
-            except queue.Empty:
-                continue
-
-            if item is None:
-                break
-
-            header, body = item
-            try:
-                self.__handler.handle(header, body)
-            except Exception as e:
-                print(f"[ERROR] Handler exception for '{header}': {e}", flush=True)
+    def __handle_message(self, header: str, body: str):
+        try:
+            self.__handler.handle(header, body)
+        except Exception as e:
+            print(f"[ERROR] Handler exception for '{header}': {e}", flush=True)
 
     def write(self, header: str, body: str):
         # Write data to the serial port in the format "#header|body\n"
@@ -260,13 +243,14 @@ class V5SerialComms:
                     # # send a line that the C++ parser will recognize: "#header|body\n"
                     # self.write("test", "message")
 
-                    # Delegate message handling to a single worker queue so serial reads stay responsive.
+                    # Invoke each callback on its own lightweight thread so serial reads remain responsive.
                     if self.__handler and (header or body):
-                        try:
-                            self.__handlerQueue.put_nowait((header, body))
-                        except queue.Full:
-                            print("[WARNING] Handler queue full; processing message inline", flush=True)
-                            self.__handler.handle(header, body)
+                        callback_thread = threading.Thread(
+                            target=self.__handle_message,
+                            args=(header, body),
+                            daemon=True,
+                        )
+                        callback_thread.start()
                     
 
             # To close the serial port gracefully, use Ctrl+C to break the loop
@@ -288,15 +272,9 @@ class V5SerialComms:
     def stop(self):
         # Stop the thread by setting started flag to False and join the thread
         self.__started = False
-        try:
-            self.__handlerQueue.put_nowait(None)
-        except Exception:
-            pass
 
         if hasattr(self, "_V5SerialComms__thread") and self.__thread is not None:
             self.__thread.join()
-        if self.__handlerThread is not None:
-            self.__handlerThread.join()
 
     def __del__(self):
         # Destructor to call the stop method when the object is deleted
