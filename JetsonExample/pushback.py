@@ -551,12 +551,6 @@ class PushbackHandler:
             if self._model_runner.model is None:
                 print(f"[WARNING] Model failed to load from {model_path}", flush=True)
             else:
-                start_obs = game.get_game_observation()
-                start_obs[ObsIndex.LOADERS_CLEARED_START] = 1
-                start_obs[ObsIndex.LOADERS_CLEARED_START+1] = 1
-                start_obs[ObsIndex.LOADERS_CLEARED_START+2] = 1
-                start_obs[ObsIndex.LOADERS_CLEARED_START+3] = 1
-                game.update_observation_from_tracker(start_obs)
                 print(f"[INFO] VexModelRunner initialized successfully for robot '{name}'", flush=True)
                 print(f"[INFO] Agent: {self._model_runner.agent_name}, Device: {self._model_runner.device}", flush=True)
             
