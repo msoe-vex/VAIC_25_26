@@ -531,13 +531,6 @@ class PushbackHandler:
                 deterministic=False
             )
             
-            start_obs = game.get_game_observation()
-            start_obs[ObsIndex.LOADERS_CLEARED_START] = 1
-            start_obs[ObsIndex.LOADERS_CLEARED_START+1] = 1
-            start_obs[ObsIndex.LOADERS_CLEARED_START+2] = 1
-            start_obs[ObsIndex.LOADERS_CLEARED_START+3] = 1
-            game.update_observation_from_tracker(start_obs)
-            
             current_folder_path = os.path.dirname(os.path.abspath(__file__))
             model_path = os.path.join(current_folder_path, "models", name+".pt")
             
@@ -549,6 +542,13 @@ class PushbackHandler:
             
             # Reset observation array
             self._observation = np.zeros(ObsIndex.TOTAL, dtype=np.float32)
+
+            start_obs = game.get_game_observation()
+            start_obs[ObsIndex.LOADERS_CLEARED_START] = 1
+            start_obs[ObsIndex.LOADERS_CLEARED_START+1] = 1
+            start_obs[ObsIndex.LOADERS_CLEARED_START+2] = 1
+            start_obs[ObsIndex.LOADERS_CLEARED_START+3] = 1
+            game.update_observation_from_tracker(start_obs)
 
             # Reset action sequence
             self._action_sequence = 0
