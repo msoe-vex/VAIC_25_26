@@ -572,7 +572,7 @@ class PushbackHandler:
                     self._model_runner.run_action(action)
                 except Exception as e:
                     print(f"[WARNING] Failed to apply ACTION_DONE payload '{rec_body}': {e}", flush=True)
-            self._schedule_send_action(5.0)
+            self._schedule_send_action()
             
         elif rec_header_upper == "START":
             print("[DEBUG] Received START command", flush=True)
