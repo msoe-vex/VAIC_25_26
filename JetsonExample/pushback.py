@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from VEXAIRL.vex_model_run import VexModelRunner
 from VEXAIRL.pushback.vexai_skills import VexAISkillsGame
+from VEXAIRL.pushback.vexai_comp import VexAICompGame
 from VEXAIRL.vex_core.base_game import Robot, Team, RobotSize
 from VEXAIRL.vex_core.config import CommunicationOption
 from VEXAIRL.pushback.pushback import ObsIndex, SENTINEL_BLOCK_VALUE, Actions
@@ -525,7 +526,8 @@ class PushbackHandler:
                 start_position=np.array([start_x, start_y], dtype=np.float32),
                 start_orientation=start_orient
             )
-            game = VexAISkillsGame(
+            # game = VexAISkillsGame(
+            game = VexAICompGame(
                 robots=[robot],
                 communication_mode=CommunicationOption.ATTENTION,
                 deterministic=False
